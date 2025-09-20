@@ -6,7 +6,6 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IVerificationLogger.sol";
 import "../interfaces/ITrustScore.sol";
 import "../interfaces/IUserIdentityRegistry.sol";
-import "../interfaces/ISystemToken.sol";
 
 contract PaymasterManager is AccessControl, ReentrancyGuard {
     bytes32 public constant PAYMASTER_ADMIN_ROLE =
@@ -100,7 +99,6 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
     IVerificationLogger public verificationLogger;
     ITrustScore public trustScore;
     IUserIdentityRegistry public userRegistry;
-    ISystemToken public systemToken;
 
     // Global settings
     uint256 public maxDailyGasPerUser;
@@ -136,11 +134,6 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
         uint256 dailyLimit
     );
     event PremiumUserAdded(address indexed user, uint256 expiresAt);
-    event CreditsPurchased(
-        address indexed user,
-        uint256 amount,
-        uint256 tokensCost
-    );
     event PaymasterStatusChanged(
         PaymasterStatus oldStatus,
         PaymasterStatus newStatus
@@ -150,8 +143,7 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
     constructor(
         address _verificationLogger,
         address _trustScore,
-        address _userRegistry,
-        address _systemToken
+        address _userRegistry
     ) {
         require(
             _verificationLogger != address(0),
@@ -159,7 +151,6 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
         );
         require(_trustScore != address(0), "Invalid trust score");
         require(_userRegistry != address(0), "Invalid user registry");
-        require(_systemToken != address(0), "Invalid system token");
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(PAYMASTER_ADMIN_ROLE, msg.sender);
@@ -168,7 +159,6 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
         verificationLogger = IVerificationLogger(_verificationLogger);
         trustScore = ITrustScore(_trustScore);
         userRegistry = IUserIdentityRegistry(_userRegistry);
-        systemToken = ISystemToken(_systemToken);
 
         maxDailyGasPerUser = 0.01 ether;
         maxMonthlyGasPerUser = 0.1 ether;
@@ -338,32 +328,6 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
         );
 
         emit SponsorPoolFunded(poolAddress, amount, msg.sender);
-    }
-
-    function purchaseGasCredits(uint256 gasAmount) external nonReentrant {
-        require(gasAmount > 0, "Invalid gas amount");
-        require(userRegistry.isRegistered(msg.sender), "User not registered");
-
-        uint256 tokenCost = gasAmount * tokenToGasRate;
-        require(
-            systemToken.balanceOf(msg.sender) >= tokenCost,
-            "Insufficient tokens"
-        );
-
-        require(
-            systemToken.transferFrom(msg.sender, address(this), tokenCost),
-            "Token transfer failed"
-        );
-
-        userCreditBalance[msg.sender] += gasAmount;
-
-        verificationLogger.logEvent(
-            "GAS_CREDITS_PURCHASED",
-            msg.sender,
-            keccak256(abi.encodePacked(gasAmount, tokenCost))
-        );
-
-        emit CreditsPurchased(msg.sender, gasAmount, tokenCost);
     }
 
     function addPremiumUser(

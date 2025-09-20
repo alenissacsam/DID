@@ -5,7 +5,6 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IVerificationLogger.sol";
 import "../interfaces/ITrustScore.sol";
-import "../interfaces/ISystemToken.sol";
 
 interface IEconomicIncentives {
     function slash(address user, string memory reason) external;
@@ -100,7 +99,6 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
     IVerificationLogger public verificationLogger;
     IEconomicIncentives public economicIncentives;
     ITrustScore public trustScore;
-    ISystemToken public systemToken;
 
     uint256 public challengeBondAmount;
     uint256 public reviewPeriod;
@@ -146,8 +144,7 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
     constructor(
         address _verificationLogger,
         address _economicIncentives,
-        address _trustScore,
-        address _systemToken
+        address _trustScore
     ) {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(DISPUTE_ADMIN_ROLE, msg.sender);
@@ -155,7 +152,6 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
         verificationLogger = IVerificationLogger(_verificationLogger);
         economicIncentives = IEconomicIncentives(_economicIncentives);
         trustScore = ITrustScore(_trustScore);
-        systemToken = ISystemToken(_systemToken);
 
         challengeBondAmount = 100 * 10 ** 18;
         reviewPeriod = 7 days;
@@ -259,18 +255,6 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
         );
         require(bytes(title).length > 0, "Title required");
         require(bytes(description).length > 0, "Description required");
-        require(
-            systemToken.balanceOf(msg.sender) >= challengeBondAmount,
-            "Insufficient balance for bond"
-        );
-        require(
-            systemToken.transferFrom(
-                msg.sender,
-                address(this),
-                challengeBondAmount
-            ),
-            "Bond transfer failed"
-        );
 
         disputeCounter++;
         uint256 disputeId = disputeCounter;
