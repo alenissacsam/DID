@@ -1,0 +1,16 @@
+{
+    "name": "zk-circuits",
+    "private": true,
+    "version": "0.1.0",
+    "type": "module",
+    "scripts": {
+        "compile:age": "circom circuits/age_check.circom --r1cs --wasm --sym -o build",
+        "compile:ageMax": "circom circuits/age_max_check.circom --r1cs --wasm --sym -o build",
+        "compile:attr": "circom circuits/attr_equals.circom --r1cs --wasm --sym -o build",
+        "compile:income": "circom circuits/income_check.circom --r1cs --wasm --sym -o build"
+    },
+    "devDependencies": {
+        "circomlib": "^2.0.5",
+        "snarkjs": "^0.7.4"
+    }
+}

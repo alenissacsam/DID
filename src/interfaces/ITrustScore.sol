@@ -14,11 +14,7 @@ interface ITrustScore {
 
     function initializeUser(address user) external;
 
-    function updateScore(
-        address user,
-        int256 delta,
-        string memory reason
-    ) external;
+    function updateScore(address user, int256 delta, string memory reason) external;
 
     function unlockScore(address user) external;
 }

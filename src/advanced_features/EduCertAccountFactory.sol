@@ -14,8 +14,7 @@ import "../interfaces/ITrustScore.sol";
  * @dev Supports gasless account creation, session key setup, and Alchemy paymaster integration
  */
 contract EduCertAccountFactory is AccessControl {
-    bytes32 public constant FACTORY_ADMIN_ROLE =
-        keccak256("FACTORY_ADMIN_ROLE");
+    bytes32 public constant FACTORY_ADMIN_ROLE = keccak256("FACTORY_ADMIN_ROLE");
 
     // Core contracts
     address public immutable entryPoint;
@@ -55,11 +54,7 @@ contract EduCertAccountFactory is AccessControl {
 
     // Events
     event AccountCreated(
-        address indexed account,
-        address indexed owner,
-        bytes32 salt,
-        bool gasless,
-        uint256 trustScore
+        address indexed account, address indexed owner, bytes32 salt, bool gasless, uint256 trustScore
     );
     event AccountUpgraded(address indexed account, address newImplementation);
     event AlchemyConfigUpdated(string appId, address signerAddress);
@@ -75,10 +70,7 @@ contract EduCertAccountFactory is AccessControl {
         address _alchemySignerAddress
     ) {
         require(_entryPoint != address(0), "Invalid EntryPoint");
-        require(
-            _verificationLogger != address(0),
-            "Invalid verification logger"
-        );
+        require(_verificationLogger != address(0), "Invalid verification logger");
         require(_trustScore != address(0), "Invalid trust score");
 
         entryPoint = _entryPoint;
@@ -119,46 +111,29 @@ contract EduCertAccountFactory is AccessControl {
      * @param setupSessionKeys Whether to auto-setup session keys
      * @return account The created account address
      */
-    function createAccount(
-        address owner,
-        bytes32 salt,
-        bool setupSessionKeys
-    ) external payable returns (address account) {
+    function createAccount(address owner, bytes32 salt, bool setupSessionKeys)
+        external
+        payable
+        returns (address account)
+    {
         require(owner != address(0), "Invalid owner");
 
         // Check creation fee if not gasless
         if (!creationConfig.gaslessCreation) {
-            require(
-                msg.value >= creationConfig.creationFee,
-                "Insufficient creation fee"
-            );
+            require(msg.value >= creationConfig.creationFee, "Insufficient creation fee");
         }
 
         // Check account limit per user
-        require(
-            userAccounts[owner].length < alchemyConfig.maxAccountsPerUser,
-            "Max accounts per user exceeded"
-        );
+        require(userAccounts[owner].length < alchemyConfig.maxAccountsPerUser, "Max accounts per user exceeded");
 
         // Generate deterministic address
-        bytes32 finalSalt = keccak256(
-            abi.encodePacked(owner, salt, block.timestamp)
-        );
+        bytes32 finalSalt = keccak256(abi.encodePacked(owner, salt, block.timestamp));
 
         // Check if account already exists
-        require(
-            saltToAccount[finalSalt] == address(0),
-            "Account already exists"
-        );
+        require(saltToAccount[finalSalt] == address(0), "Account already exists");
 
         // Deploy account using Create2
-        account = address(
-            new EduCertModularAccount{salt: finalSalt}(
-                entryPoint,
-                owner,
-                address(verificationLogger)
-            )
-        );
+        account = address(new EduCertModularAccount{salt: finalSalt}(entryPoint, owner, address(verificationLogger)));
 
         // Update mappings
         userAccounts[owner].push(account);
@@ -169,10 +144,7 @@ contract EduCertAccountFactory is AccessControl {
         allAccounts.push(account);
 
         // Initialize trust score
-        trustScore.initializeUserScore(
-            account,
-            creationConfig.initialTrustScore
-        );
+        trustScore.initializeUserScore(account, creationConfig.initialTrustScore);
 
         // Auto-setup session keys if enabled
         if (setupSessionKeys && creationConfig.autoSetupSessionKeys) {
@@ -180,19 +152,9 @@ contract EduCertAccountFactory is AccessControl {
         }
 
         // Log creation
-        verificationLogger.logEvent(
-            "ACCOUNT_CREATED",
-            account,
-            keccak256(abi.encodePacked(owner, salt, finalSalt))
-        );
+        verificationLogger.logEvent("ACCOUNT_CREATED", account, keccak256(abi.encodePacked(owner, salt, finalSalt)));
 
-        emit AccountCreated(
-            account,
-            owner,
-            finalSalt,
-            creationConfig.gaslessCreation,
-            creationConfig.initialTrustScore
-        );
+        emit AccountCreated(account, owner, finalSalt, creationConfig.gaslessCreation, creationConfig.initialTrustScore);
 
         return account;
     }
@@ -206,27 +168,19 @@ contract EduCertAccountFactory is AccessControl {
     function createAccountWithAlchemy(
         address owner,
         uint256 sessionKeyCount,
-        bytes memory /*alchemySignature*/,
+        bytes memory, /*alchemySignature*/
         bytes memory /*additionalData*/
     ) external returns (address account) {
         require(owner != address(0), "Invalid owner");
 
         // Create the account using similar logic to createAccount
-        bytes32 salt = keccak256(
-            abi.encodePacked(owner, block.timestamp, "alchemy")
-        );
+        bytes32 salt = keccak256(abi.encodePacked(owner, block.timestamp, "alchemy"));
 
         // Check if account already exists
         require(saltToAccount[salt] == address(0), "Account already exists");
 
         // Deploy account using Create2
-        account = address(
-            new EduCertModularAccount{salt: salt}(
-                entryPoint,
-                owner,
-                address(verificationLogger)
-            )
-        );
+        account = address(new EduCertModularAccount{salt: salt}(entryPoint, owner, address(verificationLogger)));
 
         // Update mappings
         userAccounts[owner].push(account);
@@ -237,18 +191,13 @@ contract EduCertAccountFactory is AccessControl {
         allAccounts.push(account);
 
         // Initialize trust score
-        trustScore.initializeUserScore(
-            account,
-            creationConfig.initialTrustScore
-        );
+        trustScore.initializeUserScore(account, creationConfig.initialTrustScore);
 
         // Log creation with Alchemy integration
         verificationLogger.logEvent(
             "ACCOUNT_CREATED_WITH_ALCHEMY",
             account,
-            keccak256(
-                abi.encodePacked(owner, "alchemy_integration", sessionKeyCount)
-            )
+            keccak256(abi.encodePacked(owner, "alchemy_integration", sessionKeyCount))
         );
 
         // Auto-setup session keys for privacy
@@ -270,23 +219,14 @@ contract EduCertAccountFactory is AccessControl {
     /**
      * @dev Get account address before deployment (for UI/frontend)
      */
-    function getAccountAddress(
-        address owner,
-        bytes32 salt
-    ) external view returns (address predictedAddress) {
-        bytes32 finalSalt = keccak256(
-            abi.encodePacked(owner, salt, block.timestamp)
-        );
+    function getAccountAddress(address owner, bytes32 salt) external view returns (address predictedAddress) {
+        bytes32 finalSalt = keccak256(abi.encodePacked(owner, salt, block.timestamp));
 
         bytes memory bytecode = abi.encodePacked(
-            type(EduCertModularAccount).creationCode,
-            abi.encode(entryPoint, owner, address(verificationLogger))
+            type(EduCertModularAccount).creationCode, abi.encode(entryPoint, owner, address(verificationLogger))
         );
 
-        predictedAddress = Create2.computeAddress(
-            finalSalt,
-            keccak256(bytecode)
-        );
+        predictedAddress = Create2.computeAddress(finalSalt, keccak256(bytecode));
         return predictedAddress;
     }
 
@@ -297,21 +237,16 @@ contract EduCertAccountFactory is AccessControl {
         emit SessionKeysAutoSetup(account, domains);
     }
 
-    function _setupCustomSessionKeys(
-        address account,
-        string[] memory domains
-    ) internal {
+    function _setupCustomSessionKeys(address account, string[] memory domains) internal {
         for (uint256 i = 0; i < domains.length; i++) {
-            try
-                EduCertModularAccount(payable(account)).createSessionKey(
-                    domains[i],
-                    30 days, // Valid for 30 days
-                    500000, // 500k gas limit per transaction
-                    1 ether, // 1 ETH daily limit
-                    new string[](0), // Allow all functions initially
-                    true // Privacy mode enabled
-                )
-            {
+            try EduCertModularAccount(payable(account)).createSessionKey(
+                domains[i],
+                30 days, // Valid for 30 days
+                500000, // 500k gas limit per transaction
+                1 ether, // 1 ETH daily limit
+                new string[](0), // Allow all functions initially
+                true // Privacy mode enabled
+            ) {
                 // Session key created successfully
             } catch {
                 // Ignore failures, continue with other domains
@@ -332,9 +267,7 @@ contract EduCertAccountFactory is AccessControl {
     }
 
     // View functions
-    function getUserAccounts(
-        address owner
-    ) external view returns (address[] memory) {
+    function getUserAccounts(address owner) external view returns (address[] memory) {
         return userAccounts[owner];
     }
 
@@ -350,16 +283,10 @@ contract EduCertAccountFactory is AccessControl {
         return allAccounts.length;
     }
 
-    function getAccountsByOwner(
-        address owner
-    )
+    function getAccountsByOwner(address owner)
         external
         view
-        returns (
-            address[] memory accounts,
-            uint256[] memory creationTimes,
-            bool[] memory isValid
-        )
+        returns (address[] memory accounts, uint256[] memory creationTimes, bool[] memory isValid)
     {
         address[] memory userAccountList = userAccounts[owner];
         uint256 length = userAccountList.length;
@@ -405,21 +332,15 @@ contract EduCertAccountFactory is AccessControl {
         emit CreationConfigUpdated(creationFee, gaslessCreation);
     }
 
-    function addDefaultDApp(
-        string memory domain
-    ) external onlyRole(FACTORY_ADMIN_ROLE) {
+    function addDefaultDApp(string memory domain) external onlyRole(FACTORY_ADMIN_ROLE) {
         creationConfig.defaultDApps.push(domain);
     }
 
-    function removeDefaultDApp(
-        uint256 index
-    ) external onlyRole(FACTORY_ADMIN_ROLE) {
+    function removeDefaultDApp(uint256 index) external onlyRole(FACTORY_ADMIN_ROLE) {
         require(index < creationConfig.defaultDApps.length, "Invalid index");
 
         // Move last element to deleted spot and reduce array length
-        creationConfig.defaultDApps[index] = creationConfig.defaultDApps[
-            creationConfig.defaultDApps.length - 1
-        ];
+        creationConfig.defaultDApps[index] = creationConfig.defaultDApps[creationConfig.defaultDApps.length - 1];
         creationConfig.defaultDApps.pop();
     }
 

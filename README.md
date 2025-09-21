@@ -81,14 +81,47 @@ This repo includes deployment and interaction artifacts in `broadcast/`. Example
 
 Typical flow:
 ```bash
-# Dry-run on Anvil fork
-forge script script/DeployEduCertSystem.s.sol --fork-url $RPC_URL -vvvv
+# Dry-run on Anvil
+forge script script/deploy/DeployAll.s.sol:DeployAll --rpc-url $RPC_URL -vvvv
 
-# Broadcast to a network
-forge script script/DeployEduCertSystem.s.sol --rpc-url $RPC_URL --broadcast --verify -vvvv
+# Broadcast to a network (set PRIVATE_KEY)
+forge script script/deploy/DeployAll.s.sol:DeployAll --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast -vvvv
 ```
 
 Artifacts for prior runs are stored under `broadcast/*` by chain ID. Update script addresses and parameters as needed.
+
+## Scripts
+
+The `script/` folder is organized by purpose:
+
+- `script/deploy/`
+  - `DeployAll.s.sol` — Deploys VerificationLogger, TrustScore, and UserIdentityRegistry.
+- `script/zk/`
+  - `DeployAndWireZK.s.sol` — Deploy ZKProofManager and register proof verifiers; can also anchor a Merkle root.
+  - `DeployZK.s.sol` — Register existing verifiers to an existing ZKProofManager.
+- `script/roles/`
+  - `BootstrapRoles.s.sol` — Grants SCORE_MANAGER_ROLE on TrustScore to the registry.
+  - `GrantLoggerRole.s.sol` — Grants LOGGER_ROLE on VerificationLogger to a target (e.g., TrustScore or Registry).
+- `script/identity/`
+  - `RegisterIdentity.s.sol` — Registers a user identity with a commitment.
+  - `SetIdentityMetadata.s.sol` — Sets the identity metadata URI for a user.
+- `script/examples/`
+  - `Interactions.s.sol` — Placeholder for ad-hoc demos and testing.
+
+Usage examples (env: RPC_URL, PRIVATE_KEY):
+
+- Deploy core:
+  - forge script script/deploy/DeployAll.s.sol:DeployAll --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast -vvvv
+- ZK: deploy and wire (requires AGE_VERIFIER_ADDR, ATTR_VERIFIER_ADDR, INCOME_VERIFIER_ADDR, AGE_MAX_VERIFIER_ADDR):
+  - forge script script/zk/DeployAndWireZK.s.sol:DeployAndWireZK --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast -vvvv
+- ZK: wire existing manager (requires ZKPM_ADDRESS, AGE_GTE_VERIFIER, AGE_LTE_VERIFIER, ATTR_EQ_VERIFIER, INCOME_GTE_VERIFIER):
+  - forge script script/zk/DeployZK.s.sol:DeployZK --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast -vvvv
+- Roles:
+  - SCORE_MANAGER_ROLE to Registry: forge script script/roles/BootstrapRoles.s.sol:BootstrapRoles --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast -vvvv
+  - LOGGER_ROLE to TrustScore or Registry: forge script script/roles/GrantLoggerRole.s.sol:GrantLoggerRole --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast -vvvv
+- Identity:
+  - Register: forge script script/identity/RegisterIdentity.s.sol:RegisterIdentity --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast -vvvv
+  - Set metadata: forge script script/identity/SetIdentityMetadata.s.sol:SetIdentityMetadata --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast -vvvv
 
 ## Modules and Contracts
 - Identity & Trust
@@ -106,6 +139,7 @@ Artifacts for prior runs are stored under `broadcast/*` by chain ID. Update scri
   - `OrganizationRegistryProxy` + `OrganizationLogic` + `OrganizationView`
 - Privacy & Cross Chain
   - `GlobalCredentialAnchor`, `CrossChainManager`, `PrivacyManager`
+  - `ZKProofManager` — manage Groth16 proof types and anchored Merkle roots
 - Account Abstraction + Gas
   - `EduCertEntryPoint`, `EduCertModularAccount`, `EduCertAccountFactory`
   - `AlchemyGasManager`, `PaymasterManager`
@@ -138,6 +172,38 @@ Add unit tests under `test/` following Foundry conventions. Use `forge-std` util
 - `SECURITY_FIXES_SUMMARY.md` — security-focused changes
 - `JSONs/` — minified ABIs for integration
 - `broadcast/` — deployment logs and artifacts
+
+## Zero-Knowledge (ZK) Addendum
+End-to-end ZK pipeline and contracts are included:
+- Circuits: `tools/zk-circuits/circuits/*`
+- Automation: `tools/zk-circuits/Makefile` (powers of tau, compile, verifiers, proofs)
+- Verifiers: generated under `tools/zk-circuits/build/*.sol`
+- Proof Manager: `src/verification/ZKProofManager.sol`
+
+Quick start:
+```bash
+cd tools/zk-circuits
+make all          # ptau + compile all + generate verifiers
+
+# Deploy verifiers (each contains Groth16Verifier)
+forge create --rpc-url $RPC_URL --private-key $PRIVATE_KEY tools/zk-circuits/build/AgeVerifier.sol:Groth16Verifier
+forge create --rpc-url $RPC_URL --private-key $PRIVATE_KEY tools/zk-circuits/build/AgeMaxVerifier.sol:Groth16Verifier
+forge create --rpc-url $RPC_URL --private-key $PRIVATE_KEY tools/zk-circuits/build/AttrVerifier.sol:Groth16Verifier
+forge create --rpc-url $RPC_URL --private-key $PRIVATE_KEY tools/zk-circuits/build/IncomeVerifier.sol:Groth16Verifier
+
+# Deploy ZKProofManager and register verifiers
+forge create --rpc-url $RPC_URL --private-key $PRIVATE_KEY src/verification/ZKProofManager.sol:ZKProofManager
+export ZKPM_ADDRESS=0x...
+export AGE_GTE_VERIFIER=0x...
+export AGE_LTE_VERIFIER=0x...
+export ATTR_EQ_VERIFIER=0x...
+export INCOME_GTE_VERIFIER=0x...
+forge script script/deployZK.s.sol --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast -vvvv
+```
+
+For how to generate inputs from encrypted identity bundles and produce proofs, see `docs/identity_storage_and_zk_pipeline.md`.
+
+Super-detailed wiring and pipeline: `docs/zk_end_to_end_wiring.md`.
 
 ---
 Maintained with Foundry. Contributions welcome.

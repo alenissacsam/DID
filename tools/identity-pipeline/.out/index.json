@@ -1,0 +1,19 @@
+{
+  "version": "1.0",
+  "chainId": 11155111,
+  "registry": "0xRegistryAddress",
+  "user": "0xUserAddress",
+  "did": "did:pkh:eip155:11155111:0xUserAddress",
+  "identityCommitment": "0x1111111111111111111111111111111111111111111111111111111111111111",
+  "encPubKey": "TIeVgGFsSaYfuifHyTJ+qgXxChi/kGklVYJgrbGYIGs=",
+  "verification": {
+    "face": false,
+    "aadhaar": false,
+    "income": false,
+    "level": 0,
+    "updatedAt": 1758450249
+  },
+  "anchors": [],
+  "privateBundleCid": "ipfs://QmZtHssz3nA5vnfE4xoqxWB9keJqjfqsJFA8zuhvDGSeJv",
+  "history": []
+}

@@ -1,0 +1,24 @@
+{
+    "name": "identity-pipeline-helper",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "setup": "npm i",
+        "run": "node src/run.js",
+        "decrypt": "node src/decrypt.js",
+        "generate-inputs": "node src/generate-inputs.js",
+        "full-pipeline": "npm run run && npm run decrypt && npm run generate-inputs"
+    },
+    "dependencies": {
+        "@noble/hashes": "^1.3.3",
+        "@noble/curves": "^1.4.0",
+        "@stablelib/chacha20poly1305": "^1.0.1",
+        "@stablelib/random": "^1.0.2",
+        "circomlibjs": "^0.1.7",
+        "tweetnacl": "^1.0.3",
+        "@zk-kit/incremental-merkle-tree": "^1.1.0",
+        "@pinata/sdk": "^2.1.0",
+        "dotenv": "^16.4.5"
+    }
+}

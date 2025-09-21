@@ -14,8 +14,7 @@ import "../interfaces/ITrustScore.sol";
  */
 contract EduCertEntryPoint is AccessControl, ReentrancyGuard {
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
-    bytes32 public constant PAYMASTER_ADMIN_ROLE =
-        keccak256("PAYMASTER_ADMIN_ROLE");
+    bytes32 public constant PAYMASTER_ADMIN_ROLE = keccak256("PAYMASTER_ADMIN_ROLE");
 
     // Core contracts
     IEntryPoint public immutable entryPoint;
@@ -44,34 +43,15 @@ contract EduCertEntryPoint is AccessControl, ReentrancyGuard {
     mapping(address => uint256) public onboardingGasUsed; // Gas used during onboarding period
 
     // Events
-    event GasSubsidyApplied(
-        address indexed user,
-        uint256 gasAmount,
-        uint256 trustScore
-    );
-    event OnboardingSubsidyApplied(
-        address indexed user,
-        uint256 gasAmount,
-        uint256 remainingAllowance
-    );
-    event TrustScoreThresholdUpdated(
-        uint256 oldThreshold,
-        uint256 newThreshold
-    );
+    event GasSubsidyApplied(address indexed user, uint256 gasAmount, uint256 trustScore);
+    event OnboardingSubsidyApplied(address indexed user, uint256 gasAmount, uint256 remainingAllowance);
+    event TrustScoreThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
     event GasLimitUpdated(uint256 oldLimit, uint256 newLimit);
     event PaymasterWhitelisted(address indexed paymaster, bool whitelisted);
     event EduCertUserOpExecuted(
-        bytes32 indexed userOpHash,
-        address indexed sender,
-        bool subsidized,
-        uint256 trustScore,
-        uint256 gasUsed
+        bytes32 indexed userOpHash, address indexed sender, bool subsidized, uint256 trustScore, uint256 gasUsed
     );
-    event OnboardingSettingsUpdated(
-        uint256 gasAllowance,
-        uint256 period,
-        bool enabled
-    );
+    event OnboardingSettingsUpdated(uint256 gasAllowance, uint256 period, bool enabled);
 
     /**
      * @dev Constructor that sets up the EduCert EntryPoint
@@ -91,10 +71,7 @@ contract EduCertEntryPoint is AccessControl, ReentrancyGuard {
         uint256 _dailyGasLimit
     ) {
         require(_entryPoint != address(0), "Invalid EntryPoint address");
-        require(
-            _verificationLogger != address(0),
-            "Invalid verification logger"
-        );
+        require(_verificationLogger != address(0), "Invalid verification logger");
         require(_trustScore != address(0), "Invalid trust score");
 
         entryPoint = IEntryPoint(_entryPoint);
@@ -121,10 +98,11 @@ contract EduCertEntryPoint is AccessControl, ReentrancyGuard {
      * @param ops Array of UserOperations to execute
      * @param beneficiary Address to receive gas fees
      */
-    function handleOpsWithTrustScore(
-        IEntryPoint.UserOperation[] calldata ops,
-        address payable beneficiary
-    ) external onlyRole(OPERATOR_ROLE) nonReentrant {
+    function handleOpsWithTrustScore(IEntryPoint.UserOperation[] calldata ops, address payable beneficiary)
+        external
+        onlyRole(OPERATOR_ROLE)
+        nonReentrant
+    {
         uint256 opsLength = ops.length;
 
         // Pre-process operations for trust score checks and gas subsidy eligibility
@@ -136,17 +114,11 @@ contract EduCertEntryPoint is AccessControl, ReentrancyGuard {
             _resetDailyLimitsIfNeeded(sender);
 
             // Check if user is eligible for gas subsidy
-            bool eligibleForSubsidy = _isEligibleForGasSubsidy(
-                sender,
-                userTrustScore,
-                ops[i]
-            );
+            bool eligibleForSubsidy = _isEligibleForGasSubsidy(sender, userTrustScore, ops[i]);
 
             if (eligibleForSubsidy) {
                 // Update gas tracking
-                uint256 estimatedGas = ops[i].callGasLimit +
-                    ops[i].verificationGasLimit +
-                    ops[i].preVerificationGas;
+                uint256 estimatedGas = ops[i].callGasLimit + ops[i].verificationGasLimit + ops[i].preVerificationGas;
 
                 // Track first interaction for new users
                 if (userFirstInteraction[sender] == 0) {
@@ -157,40 +129,24 @@ contract EduCertEntryPoint is AccessControl, ReentrancyGuard {
                 bool isOnboarding = _isUserInOnboarding(sender);
 
                 if (
-                    isOnboarding &&
-                    enableOnboardingSubsidy &&
-                    onboardingGasUsed[sender] + estimatedGas <=
-                    onboardingGasAllowance
+                    isOnboarding && enableOnboardingSubsidy
+                        && onboardingGasUsed[sender] + estimatedGas <= onboardingGasAllowance
                 ) {
                     // Use onboarding allowance
                     onboardingGasUsed[sender] += estimatedGas;
                     emit OnboardingSubsidyApplied(
-                        sender,
-                        estimatedGas,
-                        onboardingGasAllowance - onboardingGasUsed[sender]
+                        sender, estimatedGas, onboardingGasAllowance - onboardingGasUsed[sender]
                     );
                 } else {
                     // Use regular daily allowance
                     dailyGasUsed[sender] += estimatedGas;
-                    emit GasSubsidyApplied(
-                        sender,
-                        estimatedGas,
-                        userTrustScore
-                    );
+                    emit GasSubsidyApplied(sender, estimatedGas, userTrustScore);
                 }
             }
 
             // Log the operation attempt
             verificationLogger.logEvent(
-                "USER_OP_PROCESSED",
-                sender,
-                keccak256(
-                    abi.encodePacked(
-                        ops[i].sender,
-                        ops[i].nonce,
-                        userTrustScore
-                    )
-                )
+                "USER_OP_PROCESSED", sender, keccak256(abi.encodePacked(ops[i].sender, ops[i].nonce, userTrustScore))
             );
         }
 
@@ -204,14 +160,12 @@ contract EduCertEntryPoint is AccessControl, ReentrancyGuard {
     /**
      * @dev Check if user is eligible for gas subsidy based on trust score, onboarding status, and limits
      */
-    function _isEligibleForGasSubsidy(
-        address user,
-        uint256 userTrustScore,
-        IEntryPoint.UserOperation calldata op
-    ) internal view returns (bool) {
-        uint256 estimatedGas = op.callGasLimit +
-            op.verificationGasLimit +
-            op.preVerificationGas;
+    function _isEligibleForGasSubsidy(address user, uint256 userTrustScore, IEntryPoint.UserOperation calldata op)
+        internal
+        view
+        returns (bool)
+    {
+        uint256 estimatedGas = op.callGasLimit + op.verificationGasLimit + op.preVerificationGas;
 
         // Check per-operation limit first (applies to all subsidized operations)
         if (estimatedGas > gasSubsidyLimit) return false;
@@ -221,9 +175,7 @@ contract EduCertEntryPoint is AccessControl, ReentrancyGuard {
 
         if (isOnboarding && enableOnboardingSubsidy) {
             // For onboarding users, check onboarding gas allowance
-            if (
-                onboardingGasUsed[user] + estimatedGas <= onboardingGasAllowance
-            ) {
+            if (onboardingGasUsed[user] + estimatedGas <= onboardingGasAllowance) {
                 return true;
             }
         }
@@ -243,8 +195,7 @@ contract EduCertEntryPoint is AccessControl, ReentrancyGuard {
      */
     function _isUserInOnboarding(address user) internal view returns (bool) {
         if (userFirstInteraction[user] == 0) return true; // First time user
-        return
-            (block.timestamp - userFirstInteraction[user]) <= onboardingPeriod;
+        return (block.timestamp - userFirstInteraction[user]) <= onboardingPeriod;
     }
 
     /**
@@ -261,9 +212,7 @@ contract EduCertEntryPoint is AccessControl, ReentrancyGuard {
     /**
      * @dev Update trust scores for users who used gasless transactions
      */
-    function _updateTrustScoresForGaslessOps(
-        IEntryPoint.UserOperation[] calldata ops
-    ) internal {
+    function _updateTrustScoresForGaslessOps(IEntryPoint.UserOperation[] calldata ops) internal {
         for (uint256 i = 0; i < ops.length; i++) {
             address sender = ops[i].sender;
             uint256 userTrustScore = trustScore.getTrustScore(sender);
@@ -277,9 +226,7 @@ contract EduCertEntryPoint is AccessControl, ReentrancyGuard {
                     sender,
                     true, // subsidized
                     userTrustScore,
-                    ops[i].callGasLimit +
-                        ops[i].verificationGasLimit +
-                        ops[i].preVerificationGas
+                    ops[i].callGasLimit + ops[i].verificationGasLimit + ops[i].preVerificationGas
                 );
             }
         }
@@ -288,29 +235,24 @@ contract EduCertEntryPoint is AccessControl, ReentrancyGuard {
     /**
      * @dev Fallback to standard EntryPoint handleOps for non-EduCert operations
      */
-    function handleOps(
-        IEntryPoint.UserOperation[] calldata ops,
-        address payable beneficiary
-    ) external onlyRole(OPERATOR_ROLE) {
+    function handleOps(IEntryPoint.UserOperation[] calldata ops, address payable beneficiary)
+        external
+        onlyRole(OPERATOR_ROLE)
+    {
         entryPoint.handleOps(ops, beneficiary);
     }
 
     /**
      * @dev Get user operation hash through EntryPoint
      */
-    function getUserOpHash(
-        IEntryPoint.UserOperation calldata userOp
-    ) external view returns (bytes32) {
+    function getUserOpHash(IEntryPoint.UserOperation calldata userOp) external view returns (bytes32) {
         return entryPoint.getUserOpHash(userOp);
     }
 
     /**
      * @dev Get nonce through EntryPoint
      */
-    function getNonce(
-        address sender,
-        uint192 key
-    ) external view returns (uint256) {
+    function getNonce(address sender, uint192 key) external view returns (uint256) {
         return entryPoint.getNonce(sender, key);
     }
 
@@ -331,9 +273,7 @@ contract EduCertEntryPoint is AccessControl, ReentrancyGuard {
     /**
      * @dev Check if user is eligible for gas subsidy (view function)
      */
-    function isEligibleForGasSubsidy(
-        address user
-    ) external view returns (bool eligible, string memory reason) {
+    function isEligibleForGasSubsidy(address user) external view returns (bool eligible, string memory reason) {
         uint256 userTrustScore = trustScore.getTrustScore(user);
 
         // Check onboarding eligibility first
@@ -358,9 +298,7 @@ contract EduCertEntryPoint is AccessControl, ReentrancyGuard {
 
         // Check daily limit (simulate reset)
         uint256 currentDay = block.timestamp / 1 days;
-        uint256 currentDailyUsage = (lastResetDay[user] < currentDay)
-            ? 0
-            : dailyGasUsed[user];
+        uint256 currentDailyUsage = (lastResetDay[user] < currentDay) ? 0 : dailyGasUsed[user];
 
         if (currentDailyUsage >= dailyGasLimit) {
             return (false, "Daily gas limit exceeded");
@@ -372,124 +310,79 @@ contract EduCertEntryPoint is AccessControl, ReentrancyGuard {
     /**
      * @dev Get user's onboarding status and remaining allowance
      */
-    function getUserOnboardingInfo(
-        address user
-    )
+    function getUserOnboardingInfo(address user)
         external
         view
-        returns (
-            bool isOnboarding,
-            uint256 gasUsed,
-            uint256 gasRemaining,
-            uint256 timeRemaining
-        )
+        returns (bool isOnboarding, uint256 gasUsed, uint256 gasRemaining, uint256 timeRemaining)
     {
         isOnboarding = _isUserInOnboarding(user);
         gasUsed = onboardingGasUsed[user];
-        gasRemaining = (gasUsed >= onboardingGasAllowance)
-            ? 0
-            : onboardingGasAllowance - gasUsed;
+        gasRemaining = (gasUsed >= onboardingGasAllowance) ? 0 : onboardingGasAllowance - gasUsed;
 
         if (userFirstInteraction[user] == 0 || isOnboarding) {
-            uint256 elapsed = (userFirstInteraction[user] == 0)
-                ? 0
-                : block.timestamp - userFirstInteraction[user];
-            timeRemaining = (elapsed >= onboardingPeriod)
-                ? 0
-                : onboardingPeriod - elapsed;
+            uint256 elapsed = (userFirstInteraction[user] == 0) ? 0 : block.timestamp - userFirstInteraction[user];
+            timeRemaining = (elapsed >= onboardingPeriod) ? 0 : onboardingPeriod - elapsed;
         } else {
             timeRemaining = 0;
         }
     }
 
     // Admin functions
-    function setTrustScoreThreshold(
-        uint256 newThreshold
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setTrustScoreThreshold(uint256 newThreshold) external onlyRole(DEFAULT_ADMIN_ROLE) {
         uint256 oldThreshold = minTrustScoreForGasless;
         minTrustScoreForGasless = newThreshold;
         emit TrustScoreThresholdUpdated(oldThreshold, newThreshold);
     }
 
-    function setGasSubsidyLimit(
-        uint256 newLimit
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setGasSubsidyLimit(uint256 newLimit) external onlyRole(DEFAULT_ADMIN_ROLE) {
         uint256 oldLimit = gasSubsidyLimit;
         gasSubsidyLimit = newLimit;
         emit GasLimitUpdated(oldLimit, newLimit);
     }
 
-    function setDailyGasLimit(
-        uint256 newLimit
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setDailyGasLimit(uint256 newLimit) external onlyRole(DEFAULT_ADMIN_ROLE) {
         uint256 oldLimit = dailyGasLimit;
         dailyGasLimit = newLimit;
         emit GasLimitUpdated(oldLimit, newLimit);
     }
 
-    function setTrustScoreBasedGasSubsidy(
-        bool enabled
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setTrustScoreBasedGasSubsidy(bool enabled) external onlyRole(DEFAULT_ADMIN_ROLE) {
         trustScoreBasedGasSubsidy = enabled;
     }
 
-    function whitelistPaymaster(
-        address paymaster,
-        bool whitelisted
-    ) external onlyRole(PAYMASTER_ADMIN_ROLE) {
+    function whitelistPaymaster(address paymaster, bool whitelisted) external onlyRole(PAYMASTER_ADMIN_ROLE) {
         whitelistedPaymasters[paymaster] = whitelisted;
         emit PaymasterWhitelisted(paymaster, whitelisted);
     }
 
     // Onboarding configuration functions
-    function setOnboardingSettings(
-        uint256 _gasAllowance,
-        uint256 _period,
-        bool _enabled
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setOnboardingSettings(uint256 _gasAllowance, uint256 _period, bool _enabled)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
         onboardingGasAllowance = _gasAllowance;
         onboardingPeriod = _period;
         enableOnboardingSubsidy = _enabled;
         emit OnboardingSettingsUpdated(_gasAllowance, _period, _enabled);
     }
 
-    function setOnboardingGasAllowance(
-        uint256 _gasAllowance
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setOnboardingGasAllowance(uint256 _gasAllowance) external onlyRole(DEFAULT_ADMIN_ROLE) {
         onboardingGasAllowance = _gasAllowance;
-        emit OnboardingSettingsUpdated(
-            _gasAllowance,
-            onboardingPeriod,
-            enableOnboardingSubsidy
-        );
+        emit OnboardingSettingsUpdated(_gasAllowance, onboardingPeriod, enableOnboardingSubsidy);
     }
 
-    function setOnboardingPeriod(
-        uint256 _period
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setOnboardingPeriod(uint256 _period) external onlyRole(DEFAULT_ADMIN_ROLE) {
         onboardingPeriod = _period;
-        emit OnboardingSettingsUpdated(
-            onboardingGasAllowance,
-            _period,
-            enableOnboardingSubsidy
-        );
+        emit OnboardingSettingsUpdated(onboardingGasAllowance, _period, enableOnboardingSubsidy);
     }
 
-    function setEnableOnboardingSubsidy(
-        bool _enabled
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setEnableOnboardingSubsidy(bool _enabled) external onlyRole(DEFAULT_ADMIN_ROLE) {
         enableOnboardingSubsidy = _enabled;
-        emit OnboardingSettingsUpdated(
-            onboardingGasAllowance,
-            onboardingPeriod,
-            _enabled
-        );
+        emit OnboardingSettingsUpdated(onboardingGasAllowance, onboardingPeriod, _enabled);
     }
 
     // Emergency functions
-    function emergencyWithdraw(
-        address payable to
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function emergencyWithdraw(address payable to) external onlyRole(DEFAULT_ADMIN_ROLE) {
         uint256 balance = address(this).balance;
         require(balance > 0, "No balance to withdraw");
         to.transfer(balance);

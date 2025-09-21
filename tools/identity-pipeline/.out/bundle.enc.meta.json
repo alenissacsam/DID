@@ -1,0 +1,17 @@
+{
+  "aead": "chacha20poly1305",
+  "aad": {
+    "chainId": 11155111,
+    "registry": "0xRegistryAddress",
+    "user": "0xUserAddress",
+    "identityCommitment": "0x1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "cekWrapped": {
+    "alg": "nacl.box.x25519xsalsa20poly1305",
+    "recipient": "TIeVgGFsSaYfuifHyTJ+qgXxChi/kGklVYJgrbGYIGs=",
+    "senderEphemeralPubKey": "6jH2ue0Zn3z8/KCZxkwTmau5glK+4ySuOtfJKKBTiC8=",
+    "nonce": "1QwCWSBi1QCGjLkHcncrKnZo5ztkzHBV",
+    "wrapped": "s+8qo5uvxI+2x1bI/A6vKhnD0Iq3wmWytI+axAQD6gyq9X/zIyuvxK3CQY+WWfsB"
+  },
+  "nonce": "HvQT28mdn5qep33f"
+}

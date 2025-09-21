@@ -56,28 +56,11 @@ contract AlchemyGasManager is AccessControl, ReentrancyGuard {
 
     // Events
     event GasSponsored(
-        address indexed user,
-        address indexed dapp,
-        uint256 gasAmount,
-        uint256 trustScore,
-        string ruleUsed
+        address indexed user, address indexed dapp, uint256 gasAmount, uint256 trustScore, string ruleUsed
     );
-    event SponsorshipRuleUpdated(
-        bytes32 indexed ruleId,
-        uint256 minTrustScore,
-        uint256 maxGasPerOp,
-        bool isActive
-    );
-    event AlchemyConfigUpdated(
-        string policyId,
-        string appId,
-        address paymaster
-    );
-    event OnboardingGasProvided(
-        address indexed user,
-        uint256 gasAmount,
-        uint256 remainingAllowance
-    );
+    event SponsorshipRuleUpdated(bytes32 indexed ruleId, uint256 minTrustScore, uint256 maxGasPerOp, bool isActive);
+    event AlchemyConfigUpdated(string policyId, string appId, address paymaster);
+    event OnboardingGasProvided(address indexed user, uint256 gasAmount, uint256 remainingAllowance);
 
     constructor(
         address _entryPoint,
@@ -89,10 +72,7 @@ contract AlchemyGasManager is AccessControl, ReentrancyGuard {
     ) {
         require(_entryPoint != address(0), "Invalid EntryPoint");
         require(_trustScore != address(0), "Invalid TrustScore");
-        require(
-            _verificationLogger != address(0),
-            "Invalid VerificationLogger"
-        );
+        require(_verificationLogger != address(0), "Invalid VerificationLogger");
 
         entryPoint = _entryPoint;
         trustScore = ITrustScore(_trustScore);
@@ -130,16 +110,12 @@ contract AlchemyGasManager is AccessControl, ReentrancyGuard {
     function shouldSponsorGas(
         address user,
         address,
-        /*dapp*/ uint256 gasRequested
-    )
-        external
-        view
-        returns (bool shouldSponsor, uint256 maxGas, string memory ruleUsed)
-    {
+        /*dapp*/
+        uint256 gasRequested
+    ) external view returns (bool shouldSponsor, uint256 maxGas, string memory ruleUsed) {
         // Check onboarding eligibility first
         if (_isUserOnboarding(user)) {
-            uint256 remainingOnboarding = onboardingGasAllowance -
-                onboardingGasUsed[user];
+            uint256 remainingOnboarding = onboardingGasAllowance - onboardingGasUsed[user];
             if (remainingOnboarding >= gasRequested) {
                 return (true, gasRequested, "ONBOARDING");
             }
@@ -162,14 +138,8 @@ contract AlchemyGasManager is AccessControl, ReentrancyGuard {
             uint256 currentDay = block.timestamp / 1 days;
             uint256 currentMonth = block.timestamp / 30 days;
 
-            if (
-                dailyGasUsed[user][currentDay] + gasRequested >
-                rule.maxGasPerDay
-            ) continue;
-            if (
-                monthlyGasUsed[user][currentMonth] + gasRequested >
-                rule.maxGasPerMonth
-            ) continue;
+            if (dailyGasUsed[user][currentDay] + gasRequested > rule.maxGasPerDay) continue;
+            if (monthlyGasUsed[user][currentMonth] + gasRequested > rule.maxGasPerMonth) continue;
 
             return (true, gasRequested, rule.description);
         }
@@ -180,12 +150,11 @@ contract AlchemyGasManager is AccessControl, ReentrancyGuard {
     /**
      * @dev Execute gas sponsorship after UserOp execution
      */
-    function recordGasSponsorship(
-        address user,
-        address dapp,
-        uint256 gasUsed,
-        string memory ruleUsed
-    ) external onlyRole(OPERATOR_ROLE) nonReentrant {
+    function recordGasSponsorship(address user, address dapp, uint256 gasUsed, string memory ruleUsed)
+        external
+        onlyRole(OPERATOR_ROLE)
+        nonReentrant
+    {
         uint256 currentDay = block.timestamp / 1 days;
         uint256 currentMonth = block.timestamp / 30 days;
 
@@ -195,69 +164,45 @@ contract AlchemyGasManager is AccessControl, ReentrancyGuard {
         totalGasSponsored[user] += gasUsed;
 
         // Handle onboarding tracking
-        if (
-            keccak256(abi.encodePacked(ruleUsed)) ==
-            keccak256(abi.encodePacked("ONBOARDING"))
-        ) {
+        if (keccak256(abi.encodePacked(ruleUsed)) == keccak256(abi.encodePacked("ONBOARDING"))) {
             if (userOnboardingStart[user] == 0) {
                 userOnboardingStart[user] = block.timestamp;
             }
             onboardingGasUsed[user] += gasUsed;
 
-            emit OnboardingGasProvided(
-                user,
-                gasUsed,
-                onboardingGasAllowance - onboardingGasUsed[user]
-            );
+            emit OnboardingGasProvided(user, gasUsed, onboardingGasAllowance - onboardingGasUsed[user]);
         } else {
             // Update trust score for responsible usage
             trustScore.updateScoreForGaslessTransaction(user);
         }
 
         // Log the sponsorship
-        verificationLogger.logEvent(
-            "GAS_SPONSORED",
-            user,
-            keccak256(abi.encodePacked(dapp, gasUsed, ruleUsed))
-        );
+        verificationLogger.logEvent("GAS_SPONSORED", user, keccak256(abi.encodePacked(dapp, gasUsed, ruleUsed)));
 
-        emit GasSponsored(
-            user,
-            dapp,
-            gasUsed,
-            trustScore.getTrustScore(user),
-            ruleUsed
-        );
+        emit GasSponsored(user, dapp, gasUsed, trustScore.getTrustScore(user), ruleUsed);
     }
 
     /**
      * @dev Get Alchemy-compatible paymaster data
      */
-    function getPaymasterData(
-        address user,
-        address dapp,
-        uint256 gasLimit
-    ) external view returns (bytes memory paymasterData) {
-        (bool shouldSponsor, uint256 maxGas, string memory ruleUsed) = this
-            .shouldSponsorGas(user, dapp, gasLimit);
+    function getPaymasterData(address user, address dapp, uint256 gasLimit)
+        external
+        view
+        returns (bytes memory paymasterData)
+    {
+        (bool shouldSponsor, uint256 maxGas, string memory ruleUsed) = this.shouldSponsorGas(user, dapp, gasLimit);
 
         if (!shouldSponsor) {
             return "";
         }
 
         // Format paymaster data for Alchemy compatibility
-        return
-            abi.encodePacked(
-                alchemyConfig.alchemyPaymaster,
-                maxGas,
-                keccak256(abi.encodePacked(ruleUsed))
-            );
+        return abi.encodePacked(alchemyConfig.alchemyPaymaster, maxGas, keccak256(abi.encodePacked(ruleUsed)));
     }
 
     function _isUserOnboarding(address user) internal view returns (bool) {
         if (userOnboardingStart[user] == 0) return true; // First time user
-        return
-            (block.timestamp - userOnboardingStart[user]) <= onboardingPeriod;
+        return (block.timestamp - userOnboardingStart[user]) <= onboardingPeriod;
     }
 
     function _getActiveRuleIds() internal pure returns (bytes32[] memory) {
@@ -348,18 +293,12 @@ contract AlchemyGasManager is AccessControl, ReentrancyGuard {
         emit AlchemyConfigUpdated(policyId, appId, alchemyPaymaster);
     }
 
-    function setOnboardingSettings(
-        uint256 gasAllowance,
-        uint256 period
-    ) external onlyRole(ADMIN_ROLE) {
+    function setOnboardingSettings(uint256 gasAllowance, uint256 period) external onlyRole(ADMIN_ROLE) {
         onboardingGasAllowance = gasAllowance;
         onboardingPeriod = period;
     }
 
-    function whitelistDApp(
-        address dapp,
-        bool whitelisted
-    ) external onlyRole(ADMIN_ROLE) {
+    function whitelistDApp(address dapp, bool whitelisted) external onlyRole(ADMIN_ROLE) {
         whitelistedDApps[dapp] = whitelisted;
     }
 

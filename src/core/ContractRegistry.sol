@@ -5,8 +5,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "../interfaces/IVerificationLogger.sol";
 
 contract ContractRegistry is AccessControl {
-    bytes32 public constant REGISTRY_ADMIN_ROLE =
-        keccak256("REGISTRY_ADMIN_ROLE");
+    bytes32 public constant REGISTRY_ADMIN_ROLE = keccak256("REGISTRY_ADMIN_ROLE");
 
     struct ContractInfo {
         address contractAddress;
@@ -23,20 +22,9 @@ contract ContractRegistry is AccessControl {
 
     IVerificationLogger public verificationLogger;
 
-    event ContractRegistered(
-        string indexed name,
-        address indexed contractAddress,
-        string version
-    );
-    event ContractUpdated(
-        string indexed name,
-        address indexed oldAddress,
-        address indexed newAddress
-    );
-    event ContractDeactivated(
-        string indexed name,
-        address indexed contractAddress
-    );
+    event ContractRegistered(string indexed name, address indexed contractAddress, string version);
+    event ContractUpdated(string indexed name, address indexed oldAddress, address indexed newAddress);
+    event ContractDeactivated(string indexed name, address indexed contractAddress);
 
     constructor(address _verificationLogger) {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -45,21 +33,14 @@ contract ContractRegistry is AccessControl {
         verificationLogger = IVerificationLogger(_verificationLogger);
     }
 
-    function registerContract(
-        string memory name,
-        address contractAddress,
-        string memory version
-    ) public onlyRole(REGISTRY_ADMIN_ROLE) {
+    function registerContract(string memory name, address contractAddress, string memory version)
+        public
+        onlyRole(REGISTRY_ADMIN_ROLE)
+    {
         require(contractAddress != address(0), "Invalid contract address");
         require(contractAddress.code.length > 0, "Address is not a contract");
-        require(
-            bytes(name).length > 0 && bytes(name).length <= 50,
-            "Invalid name length"
-        );
-        require(
-            bytes(version).length > 0 && bytes(version).length <= 20,
-            "Invalid version length"
-        );
+        require(bytes(name).length > 0 && bytes(name).length <= 50, "Invalid name length");
+        require(bytes(version).length > 0 && bytes(version).length <= 20, "Invalid version length");
 
         bool isNewContract = contracts[name].contractAddress == address(0);
 
@@ -102,15 +83,11 @@ contract ContractRegistry is AccessControl {
         }
     }
 
-    function updateContract(
-        string memory name,
-        address newAddress,
-        string memory newVersion
-    ) external onlyRole(REGISTRY_ADMIN_ROLE) {
-        require(
-            contracts[name].contractAddress != address(0),
-            "Contract not found"
-        );
+    function updateContract(string memory name, address newAddress, string memory newVersion)
+        external
+        onlyRole(REGISTRY_ADMIN_ROLE)
+    {
+        require(contracts[name].contractAddress != address(0), "Contract not found");
         require(newAddress != address(0), "Invalid new address");
         require(contracts[name].contractAddress != newAddress, "Same address");
 
@@ -128,68 +105,42 @@ contract ContractRegistry is AccessControl {
         addressToName[newAddress] = name;
 
         verificationLogger.logEvent(
-            "CONTRACT_UPDATED",
-            msg.sender,
-            keccak256(abi.encodePacked(name, oldAddress, newAddress))
+            "CONTRACT_UPDATED", msg.sender, keccak256(abi.encodePacked(name, oldAddress, newAddress))
         );
 
         emit ContractUpdated(name, oldAddress, newAddress);
     }
 
-    function deactivateContract(
-        string memory name
-    ) external onlyRole(REGISTRY_ADMIN_ROLE) {
-        require(
-            contracts[name].contractAddress != address(0),
-            "Contract not found"
-        );
+    function deactivateContract(string memory name) external onlyRole(REGISTRY_ADMIN_ROLE) {
+        require(contracts[name].contractAddress != address(0), "Contract not found");
         require(contracts[name].isActive, "Contract already inactive");
 
         contracts[name].isActive = false;
 
-        verificationLogger.logEvent(
-            "CONTRACT_DEACTIVATED",
-            msg.sender,
-            keccak256(abi.encodePacked(name))
-        );
+        verificationLogger.logEvent("CONTRACT_DEACTIVATED", msg.sender, keccak256(abi.encodePacked(name)));
 
         emit ContractDeactivated(name, contracts[name].contractAddress);
     }
 
-    function reactivateContract(
-        string memory name
-    ) external onlyRole(REGISTRY_ADMIN_ROLE) {
-        require(
-            contracts[name].contractAddress != address(0),
-            "Contract not found"
-        );
+    function reactivateContract(string memory name) external onlyRole(REGISTRY_ADMIN_ROLE) {
+        require(contracts[name].contractAddress != address(0), "Contract not found");
         require(!contracts[name].isActive, "Contract already active");
 
         contracts[name].isActive = true;
 
-        verificationLogger.logEvent(
-            "CONTRACT_REACTIVATED",
-            msg.sender,
-            keccak256(abi.encodePacked(name))
-        );
+        verificationLogger.logEvent("CONTRACT_REACTIVATED", msg.sender, keccak256(abi.encodePacked(name)));
     }
 
-    function getContractAddress(
-        string memory name
-    ) external view returns (address) {
+    function getContractAddress(string memory name) external view returns (address) {
         require(contracts[name].isActive, "Contract inactive or not found");
         return contracts[name].contractAddress;
     }
 
-    function getContractInfo(
-        string memory name
-    ) external view returns (ContractInfo memory) {
+    function getContractInfo(string memory name) external view returns (ContractInfo memory) {
         return contracts[name];
     }
 
-    function getContractName(
-        address contractAddress
-    ) external view returns (string memory) {
+    function getContractName(address contractAddress) external view returns (string memory) {
         return addressToName[contractAddress];
     }
 
@@ -221,35 +172,24 @@ contract ContractRegistry is AccessControl {
         return activeContracts;
     }
 
-    function isContractRegistered(
-        string memory name
-    ) external view returns (bool) {
+    function isContractRegistered(string memory name) external view returns (bool) {
         return contracts[name].contractAddress != address(0);
     }
 
     function isContractActive(string memory name) external view returns (bool) {
-        return
-            contracts[name].contractAddress != address(0) &&
-            contracts[name].isActive;
+        return contracts[name].contractAddress != address(0) && contracts[name].isActive;
     }
 
-    function verifyContract(
-        string memory name,
-        address expectedAddress
-    ) external view returns (bool) {
+    function verifyContract(string memory name, address expectedAddress) external view returns (bool) {
         ContractInfo memory info = contracts[name];
         return info.contractAddress == expectedAddress && info.isActive;
     }
 
-    function getContractCodeHash(
-        string memory name
-    ) external view returns (bytes32) {
+    function getContractCodeHash(string memory name) external view returns (bytes32) {
         return contracts[name].codeHash;
     }
 
-    function verifyCodeIntegrity(
-        string memory name
-    ) external view returns (bool) {
+    function verifyCodeIntegrity(string memory name) external view returns (bool) {
         ContractInfo memory info = contracts[name];
         if (info.contractAddress == address(0)) return false;
 
@@ -257,16 +197,12 @@ contract ContractRegistry is AccessControl {
         return currentCodeHash == info.codeHash;
     }
 
-    function batchRegisterContracts(
-        string[] memory names,
-        address[] memory addresses,
-        string[] memory versions
-    ) external onlyRole(REGISTRY_ADMIN_ROLE) {
+    function batchRegisterContracts(string[] memory names, address[] memory addresses, string[] memory versions)
+        external
+        onlyRole(REGISTRY_ADMIN_ROLE)
+    {
         uint256 length = names.length;
-        require(
-            length == addresses.length && addresses.length == versions.length,
-            "Array lengths must match"
-        );
+        require(length == addresses.length && addresses.length == versions.length, "Array lengths must match");
         require(length > 0 && length <= 20, "Invalid batch size"); // Limit batch size for gas efficiency
 
         unchecked {
@@ -279,11 +215,7 @@ contract ContractRegistry is AccessControl {
     function getContractStats()
         external
         view
-        returns (
-            uint256 totalContracts,
-            uint256 activeContracts,
-            uint256 inactiveContracts
-        )
+        returns (uint256 totalContracts, uint256 activeContracts, uint256 inactiveContracts)
     {
         totalContracts = contractNames.length;
         uint256 active = 0;
@@ -298,9 +230,7 @@ contract ContractRegistry is AccessControl {
         inactiveContracts = totalContracts - active;
     }
 
-    function _getCodeHash(
-        address contractAddress
-    ) private view returns (bytes32) {
+    function _getCodeHash(address contractAddress) private view returns (bytes32) {
         bytes32 codeHash;
         assembly {
             codeHash := extcodehash(contractAddress)

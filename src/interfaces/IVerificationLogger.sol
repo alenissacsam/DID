@@ -6,9 +6,5 @@ pragma solidity ^0.8.19;
  * @notice Interface for the VerificationLogger contract
  */
 interface IVerificationLogger {
-    function logEvent(
-        string memory eventType,
-        address user,
-        bytes32 dataHash
-    ) external;
+    function logEvent(string memory eventType, address user, bytes32 dataHash) external;
 }

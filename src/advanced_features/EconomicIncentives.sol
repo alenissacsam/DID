@@ -56,23 +56,11 @@ contract EconomicIncentives is AccessControl, ReentrancyGuard {
     event Unstaked(address indexed user, uint256 amount);
     event RewardClaimed(address indexed user, uint256 amount);
     event Slashed(address indexed user, uint256 amount, string reason);
-    event RewardDistributed(
-        address indexed user,
-        uint256 amount,
-        string reason
-    );
-    event StakingTierAdded(
-        uint256 tierIndex,
-        uint256 minStake,
-        uint256 multiplier
-    );
+    event RewardDistributed(address indexed user, uint256 amount, string reason);
+    event StakingTierAdded(uint256 tierIndex, uint256 minStake, uint256 multiplier);
     event RewardPoolCreated(string poolName, uint256 totalRewards);
 
-    constructor(
-        address _stakingToken,
-        address _trustScore,
-        address _verificationLogger
-    ) {
+    constructor(address _stakingToken, address _trustScore, address _verificationLogger) {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(REWARD_ADMIN_ROLE, msg.sender);
         _grantRole(SLASHER_ROLE, msg.sender);
@@ -92,10 +80,7 @@ contract EconomicIncentives is AccessControl, ReentrancyGuard {
 
     function stake(uint256 amount) external nonReentrant {
         require(amount >= minimumStake, "Amount below minimum stake");
-        require(
-            stakingToken.transferFrom(msg.sender, address(this), amount),
-            "Transfer failed"
-        );
+        require(stakingToken.transferFrom(msg.sender, address(this), amount), "Transfer failed");
 
         if (!stakes[msg.sender].isActive) {
             stakers.push(msg.sender);
@@ -111,25 +96,15 @@ contract EconomicIncentives is AccessControl, ReentrancyGuard {
         uint256 tier = _getStakingTier(stakes[msg.sender].amount);
         trustScore.updateScore(msg.sender, 5, "Staked tokens");
 
-        verificationLogger.logEvent(
-            "TOKENS_STAKED",
-            msg.sender,
-            keccak256(abi.encodePacked(amount, tier))
-        );
+        verificationLogger.logEvent("TOKENS_STAKED", msg.sender, keccak256(abi.encodePacked(amount, tier)));
 
         emit Staked(msg.sender, amount, tier);
     }
 
     function unstake(uint256 amount) external nonReentrant {
         require(stakes[msg.sender].isActive, "No active stake");
-        require(
-            stakes[msg.sender].amount >= amount,
-            "Insufficient staked amount"
-        );
-        require(
-            block.timestamp >= stakes[msg.sender].lockExpiry,
-            "Stake still locked"
-        );
+        require(stakes[msg.sender].amount >= amount, "Insufficient staked amount");
+        require(block.timestamp >= stakes[msg.sender].lockExpiry, "Stake still locked");
         require(!stakes[msg.sender].isSlashed, "Cannot unstake slashed stake");
 
         stakes[msg.sender].amount -= amount;
@@ -142,11 +117,7 @@ contract EconomicIncentives is AccessControl, ReentrancyGuard {
 
         require(stakingToken.transfer(msg.sender, amount), "Transfer failed");
 
-        verificationLogger.logEvent(
-            "TOKENS_UNSTAKED",
-            msg.sender,
-            keccak256(abi.encodePacked(amount))
-        );
+        verificationLogger.logEvent("TOKENS_UNSTAKED", msg.sender, keccak256(abi.encodePacked(amount)));
 
         emit Unstaked(msg.sender, amount);
     }
@@ -164,28 +135,20 @@ contract EconomicIncentives is AccessControl, ReentrancyGuard {
 
         _removeStaker(msg.sender);
 
-        require(
-            stakingToken.transfer(msg.sender, netAmount),
-            "Transfer failed"
-        );
+        require(stakingToken.transfer(msg.sender, netAmount), "Transfer failed");
 
         // Penalty stays in contract
         trustScore.updateScore(msg.sender, -10, "Emergency unstake penalty");
 
-        verificationLogger.logEvent(
-            "EMERGENCY_UNSTAKE",
-            msg.sender,
-            keccak256(abi.encodePacked(amount, penalty))
-        );
+        verificationLogger.logEvent("EMERGENCY_UNSTAKE", msg.sender, keccak256(abi.encodePacked(amount, penalty)));
 
         emit Unstaked(msg.sender, netAmount);
     }
 
-    function distributeReward(
-        address recipient,
-        uint256 amount,
-        string memory reason
-    ) external onlyRole(REWARD_ADMIN_ROLE) {
+    function distributeReward(address recipient, uint256 amount, string memory reason)
+        external
+        onlyRole(REWARD_ADMIN_ROLE)
+    {
         require(recipient != address(0), "Invalid recipient");
         require(amount > 0, "Invalid amount");
 
@@ -194,11 +157,7 @@ contract EconomicIncentives is AccessControl, ReentrancyGuard {
 
         trustScore.updateScore(recipient, 1, "Reward earned");
 
-        verificationLogger.logEvent(
-            "REWARD_DISTRIBUTED",
-            recipient,
-            keccak256(abi.encodePacked(amount, reason))
-        );
+        verificationLogger.logEvent("REWARD_DISTRIBUTED", recipient, keccak256(abi.encodePacked(amount, reason)));
 
         emit RewardDistributed(recipient, amount, reason);
     }
@@ -209,24 +168,14 @@ contract EconomicIncentives is AccessControl, ReentrancyGuard {
 
         pendingRewards[msg.sender] = 0;
 
-        require(
-            stakingToken.transfer(msg.sender, reward),
-            "Reward transfer failed"
-        );
+        require(stakingToken.transfer(msg.sender, reward), "Reward transfer failed");
 
-        verificationLogger.logEvent(
-            "REWARDS_CLAIMED",
-            msg.sender,
-            keccak256(abi.encodePacked(reward))
-        );
+        verificationLogger.logEvent("REWARDS_CLAIMED", msg.sender, keccak256(abi.encodePacked(reward)));
 
         emit RewardClaimed(msg.sender, reward);
     }
 
-    function slash(
-        address user,
-        string memory reason
-    ) external onlyRole(SLASHER_ROLE) {
+    function slash(address user, string memory reason) external onlyRole(SLASHER_ROLE) {
         require(stakes[user].isActive, "User not staked");
         require(!stakes[user].isSlashed, "Already slashed");
 
@@ -242,19 +191,12 @@ contract EconomicIncentives is AccessControl, ReentrancyGuard {
 
         trustScore.updateScore(user, -20, "Slashed for misbehavior");
 
-        verificationLogger.logEvent(
-            "USER_SLASHED",
-            user,
-            keccak256(abi.encodePacked(slashAmount, reason))
-        );
+        verificationLogger.logEvent("USER_SLASHED", user, keccak256(abi.encodePacked(slashAmount, reason)));
 
         emit Slashed(user, slashAmount, reason);
     }
 
-    function calculateReward(
-        address user,
-        string memory /*poolType*/
-    ) external view returns (uint256) {
+    function calculateReward(address user, string memory /*poolType*/ ) external view returns (uint256) {
         if (!stakes[user].isActive) return 0;
 
         uint256 userTrustScore = trustScore.getTrustScore(user);
@@ -271,26 +213,20 @@ contract EconomicIncentives is AccessControl, ReentrancyGuard {
         return (baseReward * trustMultiplier * tierMultiplier) / 100;
     }
 
-    function addStakingTier(
-        uint256 minStake,
-        uint256 multiplier,
-        string memory name
-    ) external onlyRole(REWARD_ADMIN_ROLE) {
-        stakingTiers[stakingTierCount] = StakingTier({
-            minStake: minStake,
-            multiplier: multiplier,
-            name: name
-        });
+    function addStakingTier(uint256 minStake, uint256 multiplier, string memory name)
+        external
+        onlyRole(REWARD_ADMIN_ROLE)
+    {
+        stakingTiers[stakingTierCount] = StakingTier({minStake: minStake, multiplier: multiplier, name: name});
 
         emit StakingTierAdded(stakingTierCount, minStake, multiplier);
         stakingTierCount++;
     }
 
-    function createRewardPool(
-        string memory poolName,
-        uint256 totalRewards,
-        uint256 poolRewardRate
-    ) external onlyRole(REWARD_ADMIN_ROLE) {
+    function createRewardPool(string memory poolName, uint256 totalRewards, uint256 poolRewardRate)
+        external
+        onlyRole(REWARD_ADMIN_ROLE)
+    {
         rewardPools[poolName] = RewardPool({
             totalRewards: totalRewards,
             distributedRewards: 0,
@@ -302,11 +238,10 @@ contract EconomicIncentives is AccessControl, ReentrancyGuard {
         emit RewardPoolCreated(poolName, totalRewards);
     }
 
-    function batchDistributeRewards(
-        address[] memory recipients,
-        uint256[] memory amounts,
-        string memory reason
-    ) external onlyRole(REWARD_ADMIN_ROLE) {
+    function batchDistributeRewards(address[] memory recipients, uint256[] memory amounts, string memory reason)
+        external
+        onlyRole(REWARD_ADMIN_ROLE)
+    {
         require(recipients.length == amounts.length, "Arrays length mismatch");
 
         for (uint256 i = 0; i < recipients.length; i++) {
@@ -319,19 +254,10 @@ contract EconomicIncentives is AccessControl, ReentrancyGuard {
         }
     }
 
-    function getStakeInfo(
-        address user
-    )
+    function getStakeInfo(address user)
         external
         view
-        returns (
-            uint256 amount,
-            uint256 stakedAt,
-            bool isActive,
-            uint256 lockExpiry,
-            bool isSlashed,
-            uint256 tier
-        )
+        returns (uint256 amount, uint256 stakedAt, bool isActive, uint256 lockExpiry, bool isSlashed, uint256 tier)
     {
         Stake memory userStake = stakes[user];
         return (
@@ -356,9 +282,7 @@ contract EconomicIncentives is AccessControl, ReentrancyGuard {
         return stakers;
     }
 
-    function getStakingTierInfo(
-        uint256 tierIndex
-    )
+    function getStakingTierInfo(uint256 tierIndex)
         external
         view
         returns (uint256 minStake, uint256 multiplier, string memory name)
@@ -367,9 +291,7 @@ contract EconomicIncentives is AccessControl, ReentrancyGuard {
         return (tier.minStake, tier.multiplier, tier.name);
     }
 
-    function _getStakingTier(
-        uint256 stakedAmount
-    ) private view returns (uint256) {
+    function _getStakingTier(uint256 stakedAmount) private view returns (uint256) {
         // Start from highest tier and work down
         for (uint256 i = stakingTierCount; i > 0; i--) {
             if (stakedAmount >= stakingTiers[i - 1].minStake) {
@@ -381,25 +303,13 @@ contract EconomicIncentives is AccessControl, ReentrancyGuard {
 
     function _initializeStakingTiers() private {
         // Bronze tier
-        stakingTiers[0] = StakingTier({
-            minStake: 100 * 10 ** 18,
-            multiplier: 100,
-            name: "Bronze"
-        });
+        stakingTiers[0] = StakingTier({minStake: 100 * 10 ** 18, multiplier: 100, name: "Bronze"});
 
         // Silver tier
-        stakingTiers[1] = StakingTier({
-            minStake: 1000 * 10 ** 18,
-            multiplier: 125,
-            name: "Silver"
-        });
+        stakingTiers[1] = StakingTier({minStake: 1000 * 10 ** 18, multiplier: 125, name: "Silver"});
 
         // Gold tier
-        stakingTiers[2] = StakingTier({
-            minStake: 10000 * 10 ** 18,
-            multiplier: 150,
-            name: "Gold"
-        });
+        stakingTiers[2] = StakingTier({minStake: 10000 * 10 ** 18, multiplier: 150, name: "Gold"});
 
         stakingTierCount = 3;
     }

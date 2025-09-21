@@ -7,7 +7,15 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "../interfaces/IVerificationLogger.sol";
 import "../interfaces/ITrustScore.sol";
 
+// Local enum to avoid importing interface just for the type
+
 contract UserIdentityRegistry is AccessControl, ReentrancyGuard, Pausable {
+    // Keep this in sync with IUserIdentityRegistry.VerificationKind order if external callers use the interface
+    enum VerificationKind {
+        Face,
+        Aadhaar,
+        Income
+    }
     /*//////////////////////////////////////////////////////////////
                            VARIABLES & STRUCTS
     //////////////////////////////////////////////////////////////*/
@@ -52,6 +60,7 @@ contract UserIdentityRegistry is AccessControl, ReentrancyGuard, Pausable {
     event IdentityLocked(address indexed user, uint256 lockExpiry);
     event IdentityUnlocked(address indexed user);
     event CommitmentNullified(bytes32 indexed commitment);
+    event MetadataURIUpdated(address indexed user, string uri);
 
     /*//////////////////////////////////////////////////////////////
                                FUNCTIONS
@@ -107,21 +116,19 @@ contract UserIdentityRegistry is AccessControl, ReentrancyGuard, Pausable {
 
     function updateVerificationStatus(
         address user,
-        string memory verificationType,
+        VerificationKind kind,
         bool status
     ) external onlyRole(REGISTRY_MANAGER_ROLE) {
         require(identities[user].isActive, "Identity not registered");
 
-        bytes32 verificationHash = keccak256(bytes(verificationType));
-
-        if (verificationHash == keccak256("face")) {
+        if (kind == VerificationKind.Face) {
             identities[user].faceVerified = status;
-        } else if (verificationHash == keccak256("aadhaar")) {
+        } else if (kind == VerificationKind.Aadhaar) {
             identities[user].aadhaarVerified = status;
-        } else if (verificationHash == keccak256("income")) {
+        } else if (kind == VerificationKind.Income) {
             identities[user].incomeVerified = status;
         } else {
-            revert("Invalid verification type");
+            revert("Invalid verification kind");
         }
 
         // Update verification level
@@ -140,13 +147,18 @@ contract UserIdentityRegistry is AccessControl, ReentrancyGuard, Pausable {
 
         identities[user].verificationLevel = level;
 
+        // Map enum to a compact string for logs/events (backward-friendly)
+        string memory vt = kind == VerificationKind.Face
+            ? "face"
+            : (kind == VerificationKind.Aadhaar ? "aadhaar" : "income");
+
         verificationLogger.logEvent(
             "VERIFICATION_STATUS_UPDATED",
             user,
-            keccak256(abi.encodePacked(verificationType, status))
+            keccak256(abi.encodePacked(vt, status))
         );
 
-        emit VerificationStatusUpdated(user, verificationType, status);
+        emit VerificationStatusUpdated(user, vt, status);
     }
 
     function lockIdentity(
@@ -204,6 +216,33 @@ contract UserIdentityRegistry is AccessControl, ReentrancyGuard, Pausable {
         verificationLogger.logEvent("IDENTITY_UPDATED", user, newCommitment);
         emit IdentityUpdated(user, newCommitment);
         emit CommitmentNullified(oldCommitment);
+    }
+
+    /**
+     * @notice Sets or updates the off-chain metadata URI for a user's identity.
+     * @dev Manager-only to keep consistency with other state-mutating functions.
+     *      Emits MetadataURIUpdated and logs a hashed URI via the VerificationLogger.
+     * @param user The address of the user whose metadata URI is being set.
+     * @param uri The metadata URI (e.g., IPFS CID: ipfs://<cid>).
+     */
+    function setMetadataURI(
+        address user,
+        string calldata uri
+    ) external onlyRole(REGISTRY_MANAGER_ROLE) {
+        require(identities[user].isActive, "Identity not registered");
+
+        identities[user].metadataURI = uri;
+
+        if (address(verificationLogger) != address(0)) {
+            // Log a hash of the URI to avoid emitting potentially large strings as bytes32 payloads downstream
+            verificationLogger.logEvent(
+                "METADATA_URI_UPDATED",
+                user,
+                keccak256(bytes(uri))
+            );
+        }
+
+        emit MetadataURIUpdated(user, uri);
     }
 
     function deregisterIdentity(
