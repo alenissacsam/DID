@@ -4,7 +4,10 @@ pragma solidity ^0.8.19;
 import {Script, console} from "forge-std/Script.sol";
 
 interface IZKProofManager {
-    function addProofType(string calldata name, address verifierContract) external;
+    function addProofType(
+        string calldata name,
+        address verifierContract
+    ) external;
 }
 
 contract DeployZK is Script {

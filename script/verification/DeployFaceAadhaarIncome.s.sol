@@ -2,16 +2,7 @@
 pragma solidity ^0.8.19;
 
 import {Script, console} from "forge-std/Script.sol";
-import {FaceVerificationManager} from "../../src/verification/FaceVerificationManager.sol";
-import {AadhaarVerificationManager} from "../../src/verification/AadhaarVerificationManager.sol";
-import {IncomeVerificationManager} from "../../src/verification/IncomeVerificationManager.sol";
-
-interface IUserIdentityRegistryLike {
-    function isRegistered(address user) external view returns (bool);
-}
-interface ITrustScoreLike {
-    function getTrustScore(address user) external view returns (uint256);
-}
+import {DeployLib} from "../deploy/DeployLib.sol";
 
 contract DeployFaceAadhaarIncome is Script {
     function run() external {
@@ -22,18 +13,11 @@ contract DeployFaceAadhaarIncome is Script {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(pk);
 
-        FaceVerificationManager face = new FaceVerificationManager(logger, registry, trust);
-        console.log("FaceVerificationManager:", address(face));
-
-        AadhaarVerificationManager aadhaar = new AadhaarVerificationManager(
-            logger, registry, trust, address(face)
-        );
-        console.log("AadhaarVerificationManager:", address(aadhaar));
-
-        IncomeVerificationManager income = new IncomeVerificationManager(
-            logger, registry, trust, address(aadhaar)
-        );
-        console.log("IncomeVerificationManager:", address(income));
+        DeployLib.VerificationStack memory stack = DeployLib
+            .deployVerificationStack(logger, registry, trust);
+        console.log("FaceVerificationManager:", address(stack.face));
+        console.log("AadhaarVerificationManager:", address(stack.aadhaar));
+        console.log("IncomeVerificationManager:", address(stack.income));
 
         vm.stopBroadcast();
     }

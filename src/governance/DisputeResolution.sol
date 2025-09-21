@@ -6,13 +6,10 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IVerificationLogger.sol";
 import "../interfaces/ITrustScore.sol";
 
-interface IEconomicIncentives {
-    function slash(address user, string memory reason) external;
-}
-
 contract DisputeResolution is AccessControl, ReentrancyGuard {
     bytes32 public constant ARBITRATOR_ROLE = keccak256("ARBITRATOR_ROLE");
-    bytes32 public constant DISPUTE_ADMIN_ROLE = keccak256("DISPUTE_ADMIN_ROLE");
+    bytes32 public constant DISPUTE_ADMIN_ROLE =
+        keccak256("DISPUTE_ADMIN_ROLE");
 
     enum DisputeStatus {
         Pending,
@@ -30,7 +27,6 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
         FalseIdentity,
         TechnicalIssue,
         GovernanceDispute,
-        TokenDispute,
         Other
     }
 
@@ -84,7 +80,8 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
     }
 
     mapping(uint256 => Dispute) internal disputes; // Was public
-    mapping(uint256 => mapping(address => ArbitratorVote)) public arbitratorVotes;
+    mapping(uint256 => mapping(address => ArbitratorVote))
+        public arbitratorVotes;
     mapping(uint256 => DisputeEvidence[]) public disputeEvidence;
     mapping(address => uint256[]) public userDisputes;
     mapping(address => uint256[]) public challengerDisputes;
@@ -95,7 +92,6 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
     uint256 public disputeCounter;
     address[] public activeArbitrators;
     IVerificationLogger public verificationLogger;
-    IEconomicIncentives public economicIncentives;
     ITrustScore public trustScore;
 
     uint256 public challengeBondAmount;
@@ -107,26 +103,43 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
     uint256 public requiredArbitratorTrustScore;
 
     event DisputeCreated(
-        uint256 indexed disputeId, address indexed challenger, address indexed respondent, DisputeType disputeType
+        uint256 indexed disputeId,
+        address indexed challenger,
+        address indexed respondent,
+        DisputeType disputeType
     );
-    event EvidenceSubmitted(uint256 indexed disputeId, address indexed submitter, string evidenceType);
+    event EvidenceSubmitted(
+        uint256 indexed disputeId,
+        address indexed submitter,
+        string evidenceType
+    );
     event ArbitratorsAssigned(uint256 indexed disputeId, address[] arbitrators);
     event ArbitratorVoted(
-        uint256 indexed disputeId, address indexed arbitrator, bool supportsChallenger, uint256 confidence
+        uint256 indexed disputeId,
+        address indexed arbitrator,
+        bool supportsChallenger,
+        uint256 confidence
     );
-    event DisputeResolved(uint256 indexed disputeId, bool challengerWon, string reason);
+    event DisputeResolved(
+        uint256 indexed disputeId,
+        bool challengerWon,
+        string reason
+    );
     event DisputeExecuted(uint256 indexed disputeId, address indexed executor);
     event DisputeAppealed(uint256 indexed disputeId, address indexed appellant);
     event ArbitratorAdded(address indexed arbitrator);
     event ArbitratorRemoved(address indexed arbitrator, string reason);
-    event BondClaimed(uint256 indexed disputeId, address indexed claimer, uint256 amount);
+    event BondClaimed(
+        uint256 indexed disputeId,
+        address indexed claimer,
+        uint256 amount
+    );
 
-    constructor(address _verificationLogger, address _economicIncentives, address _trustScore) {
+    constructor(address _verificationLogger, address _trustScore) {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(DISPUTE_ADMIN_ROLE, msg.sender);
 
         verificationLogger = IVerificationLogger(_verificationLogger);
-        economicIncentives = IEconomicIncentives(_economicIncentives);
         trustScore = ITrustScore(_trustScore);
 
         challengeBondAmount = 100 * 10 ** 18;
@@ -139,7 +152,9 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
     }
 
     // -- Explicit Fieldwise GETTERS --
-    function getDisputeHeader(uint256 disputeId)
+    function getDisputeHeader(
+        uint256 disputeId
+    )
         external
         view
         returns (
@@ -158,7 +173,9 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
         status = d.status;
     }
 
-    function getDisputeDetails(uint256 disputeId)
+    function getDisputeDetails(
+        uint256 disputeId
+    )
         external
         view
         returns (
@@ -183,7 +200,9 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
         );
     }
 
-    function getDisputeVotes(uint256 disputeId)
+    function getDisputeVotes(
+        uint256 disputeId
+    )
         external
         view
         returns (
@@ -219,7 +238,10 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
         string memory evidenceUri,
         bytes32 evidenceHash
     ) external nonReentrant returns (uint256) {
-        require(respondent != address(0) && respondent != msg.sender, "Invalid respondent");
+        require(
+            respondent != address(0) && respondent != msg.sender,
+            "Invalid respondent"
+        );
         require(bytes(title).length > 0, "Title required");
         require(bytes(description).length > 0, "Description required");
 
@@ -261,22 +283,35 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
         _assignArbitrators(disputeId);
         trustScore.updateScore(msg.sender, -5, "Created dispute");
         verificationLogger.logEvent(
-            "DISPUTE_CREATED", msg.sender, keccak256(abi.encodePacked(disputeId, title, uint256(disputeType)))
+            "DISPUTE_CREATED",
+            msg.sender,
+            keccak256(abi.encodePacked(disputeId, title, uint256(disputeType)))
         );
         emit DisputeCreated(disputeId, msg.sender, respondent, disputeType);
         return disputeId;
     }
 
-    function voteOnDispute(uint256 disputeId, bool supportsChallenger, string memory reasoning, uint256 confidence)
-        external
-        onlyRole(ARBITRATOR_ROLE)
-    {
+    function voteOnDispute(
+        uint256 disputeId,
+        bool supportsChallenger,
+        string memory reasoning,
+        uint256 confidence
+    ) external onlyRole(ARBITRATOR_ROLE) {
         Dispute storage d = disputes[disputeId];
         require(d.status == DisputeStatus.VotingPhase, "Not in voting phase");
         require(block.timestamp <= d.votingDeadline, "Voting period expired");
-        require(_isAssignedArbitrator(disputeId, msg.sender), "Not assigned arbitrator");
-        require(!arbitratorVotes[disputeId][msg.sender].hasVoted, "Already voted");
-        require(confidence >= 1 && confidence <= 100, "Invalid confidence level");
+        require(
+            _isAssignedArbitrator(disputeId, msg.sender),
+            "Not assigned arbitrator"
+        );
+        require(
+            !arbitratorVotes[disputeId][msg.sender].hasVoted,
+            "Already voted"
+        );
+        require(
+            confidence >= 1 && confidence <= 100,
+            "Invalid confidence level"
+        );
 
         arbitratorVotes[disputeId][msg.sender] = ArbitratorVote({
             hasVoted: true,
@@ -291,9 +326,18 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
         else d.votesAgainst++;
         arbitratorStats[msg.sender].totalCases++;
         verificationLogger.logEvent(
-            "ARBITRATOR_VOTED", msg.sender, keccak256(abi.encodePacked(disputeId, supportsChallenger, confidence))
+            "ARBITRATOR_VOTED",
+            msg.sender,
+            keccak256(
+                abi.encodePacked(disputeId, supportsChallenger, confidence)
+            )
         );
-        emit ArbitratorVoted(disputeId, msg.sender, supportsChallenger, confidence);
+        emit ArbitratorVoted(
+            disputeId,
+            msg.sender,
+            supportsChallenger,
+            confidence
+        );
         if (d.totalVotes >= minArbitrators) {
             _checkAndResolveDispute(disputeId);
         }
@@ -302,8 +346,9 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
     function _checkAndResolveDispute(uint256 disputeId) private {
         Dispute storage d = disputes[disputeId];
         if (d.totalVotes >= minArbitrators) {
-            string memory reason =
-                d.votesFor > d.votesAgainst ? "Majority supports challenger" : "Majority supports respondent";
+            string memory reason = d.votesFor > d.votesAgainst
+                ? "Majority supports challenger"
+                : "Majority supports respondent";
             _resolveDispute(disputeId, reason);
         }
     }
@@ -327,14 +372,25 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
     // but always use only internal disputes[disputeId] and never return a whole struct.
 
     function _assignArbitrators(uint256 disputeId) private {
-        require(activeArbitrators.length >= minArbitrators, "Not enough arbitrators");
+        require(
+            activeArbitrators.length >= minArbitrators,
+            "Not enough arbitrators"
+        );
         Dispute storage d = disputes[disputeId];
-        uint256 seed = uint256(keccak256(abi.encodePacked(block.timestamp, disputeId, d.challenger)));
+        uint256 seed = uint256(
+            keccak256(
+                abi.encodePacked(block.timestamp, disputeId, d.challenger)
+            )
+        );
         uint256 arbitratorCount = minArbitrators;
-        if (d.disputeType == DisputeType.GovernanceDispute || d.disputeType == DisputeType.TokenDispute) {
+        if (d.disputeType == DisputeType.GovernanceDispute) {
             arbitratorCount = minArbitrators + 2;
         }
-        for (uint256 i = 0; i < arbitratorCount && i < activeArbitrators.length; i++) {
+        for (
+            uint256 i = 0;
+            i < arbitratorCount && i < activeArbitrators.length;
+            i++
+        ) {
             uint256 index = (seed + i) % activeArbitrators.length;
             d.assignedArbitrators.push(activeArbitrators[index]);
         }
@@ -342,7 +398,10 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
         emit ArbitratorsAssigned(disputeId, d.assignedArbitrators);
     }
 
-    function _isAssignedArbitrator(uint256 disputeId, address arbitrator) private view returns (bool) {
+    function _isAssignedArbitrator(
+        uint256 disputeId,
+        address arbitrator
+    ) private view returns (bool) {
         Dispute storage d = disputes[disputeId];
         for (uint256 i = 0; i < d.assignedArbitrators.length; i++) {
             if (d.assignedArbitrators[i] == arbitrator) return true;
@@ -353,7 +412,9 @@ contract DisputeResolution is AccessControl, ReentrancyGuard {
     function _removeFromArbitratorList(address arbitrator) private {
         for (uint256 i = 0; i < activeArbitrators.length; i++) {
             if (activeArbitrators[i] == arbitrator) {
-                activeArbitrators[i] = activeArbitrators[activeArbitrators.length - 1];
+                activeArbitrators[i] = activeArbitrators[
+                    activeArbitrators.length - 1
+                ];
                 activeArbitrators.pop();
                 break;
             }

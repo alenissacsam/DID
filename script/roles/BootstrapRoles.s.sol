@@ -15,7 +15,10 @@ contract BootstrapRoles is Script {
     function run() external {
         address trustAddr = vm.envAddress("TRUST_SCORE_ADDRESS");
         address registryAddr = vm.envAddress("REGISTRY_ADDRESS");
-        require(trustAddr != address(0) && registryAddr != address(0), "missing envs");
+        require(
+            trustAddr != address(0) && registryAddr != address(0),
+            "missing envs"
+        );
 
         uint256 pk = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(pk);

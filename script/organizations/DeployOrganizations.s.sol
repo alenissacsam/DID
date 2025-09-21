@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import {Script, console} from "forge-std/Script.sol";
-import {CertificateManager} from "../../src/organizations/CertificateManager.sol";
-import {RecognitionManager} from "../../src/organizations/RecognitionManager.sol";
+import {Script} from "forge-std/Script.sol";
+import {DeployLib} from "../deploy/DeployLib.sol";
 
 contract DeployOrganizations is Script {
     function run() external {
@@ -13,13 +12,7 @@ contract DeployOrganizations is Script {
 
         uint256 pk = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(pk);
-
-        CertificateManager cert = new CertificateManager(logger, registry, trust);
-        console.log("CertificateManager:", address(cert));
-
-        RecognitionManager recog = new RecognitionManager(trust, logger, address(cert));
-        console.log("RecognitionManager:", address(recog));
-
+        DeployLib.deployOrganizations(logger, registry, trust);
         vm.stopBroadcast();
     }
 }

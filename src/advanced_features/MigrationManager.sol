@@ -6,13 +6,45 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IVerificationLogger.sol";
 
 interface IContractRegistry {
-    function getContractAddress(string memory name) external view returns (address);
+    function getContractAddress(
+        string memory name
+    ) external view returns (address);
 
-    function registerContract(string memory name, address contractAddress, string memory version) external;
+    function registerContract(
+        string memory name,
+        address contractAddress,
+        string memory version
+    ) external;
 }
 
+// Compact Migration Manager (size-optimized)
 contract MigrationManager is AccessControl, ReentrancyGuard {
-    bytes32 public constant MIGRATION_ADMIN_ROLE = keccak256("MIGRATION_ADMIN_ROLE");
+    bytes32 public constant MIGRATION_ADMIN_ROLE =
+        keccak256("MIGRATION_ADMIN_ROLE");
+
+    // Errors (replace revert strings)
+    error InvalidAddr();
+    error EmptyName();
+    error EmptyFromVer();
+    error EmptyToVer();
+    error NoDataTypes();
+    error NoContracts();
+    error InvalidRecords();
+    error NotPlannedOrPaused();
+    error NotAuthorized();
+    error EmergPaused();
+    error NotInProgress();
+    error NotPaused();
+    error NotRollbackable();
+    error NoRollbackPlan();
+    error WindowExpired();
+    error EmptyBatch();
+    error InvalidCount();
+    error BatchTooLarge();
+    error InternalOnly();
+    error InvalidSize();
+    error InvalidTimeout();
+    error InvalidWindow();
 
     enum MigrationStatus {
         Planned,
@@ -36,11 +68,9 @@ contract MigrationManager is AccessControl, ReentrancyGuard {
 
     struct Migration {
         uint256 id;
-        string name;
-        string description;
-        string fromVersion;
-        string toVersion;
-        // DO NOT EXPOSE arrays in a public mapping!
+        bytes32 nameHash;
+        bytes32 fromVersionHash;
+        bytes32 toVersionHash;
         DataType[] dataTypes;
         address[] contractsToMigrate;
         address migrationExecutor;
@@ -53,7 +83,6 @@ contract MigrationManager is AccessControl, ReentrancyGuard {
         uint256 failedRecords;
         bool hasRollbackPlan;
         bytes rollbackData;
-        string errorMessage;
         bytes32 migrationHash;
     }
 
@@ -64,39 +93,16 @@ contract MigrationManager is AccessControl, ReentrancyGuard {
         bytes32 dataHash;
         uint256 processedAt;
         bool isSuccessful;
-        string errorDetails;
+        bytes32 errorCode; // keccak256(error) or 0x0
     }
 
-    struct DataBackup {
-        string contractName;
-        string dataType;
-        bytes data;
-        bytes32 backupHash;
-        uint256 backupTime;
-        string version;
-        bool isRestored;
-    }
-
-    struct StateSnapshot {
-        uint256 snapshotId;
-        string contractName;
-        bytes contractState;
-        bytes32 stateHash;
-        uint256 blockNumber;
-        uint256 timestamp;
-        bool isActive;
-    }
-
-    // Mappings with big structs must be internal, not public!
     mapping(uint256 => Migration) internal migrations;
     mapping(uint256 => BatchMigration[]) public migrationBatches;
-    mapping(bytes32 => DataBackup) public dataBackups;
-    mapping(uint256 => StateSnapshot) public stateSnapshots;
     mapping(address => bool) public authorizedMigrationContracts;
-    mapping(string => string) public contractVersions;
+    // versions keyed by name hash
+    mapping(bytes32 => bytes32) public contractVersions;
 
     uint256 public migrationCounter;
-    uint256 public snapshotCounter;
     uint256[] public activeMigrations;
 
     IVerificationLogger public verificationLogger;
@@ -107,22 +113,20 @@ contract MigrationManager is AccessControl, ReentrancyGuard {
     bool public emergencyPauseEnabled;
     uint256 public rollbackWindow;
 
-    event MigrationPlanned(uint256 indexed migrationId, string name, address executor);
-    event MigrationStarted(uint256 indexed migrationId, uint256 totalRecords);
-    event BatchMigrated(uint256 indexed migrationId, uint256 batchNumber, uint256 recordCount);
-    event MigrationCompleted(uint256 indexed migrationId, uint256 migratedRecords);
-    event MigrationPaused(uint256 indexed migrationId, address pausedBy);
-    event MigrationResumed(uint256 indexed migrationId, address resumedBy);
-    event DataBackedUp(string indexed contractName, string dataType, bytes32 backupHash);
-    event DataRestored(string indexed contractName, bytes32 backupHash);
-    event StateSnapshotEvent(uint256 indexed snapshotId, string contractName, bytes32 stateHash);
-    event RollbackExecuted(uint256 indexed migrationId, string reason);
-    event EmergencyPause(address indexed admin, string reason);
-    event EmergencyResume(address indexed admin);
+    // Abbreviated events with hashes
+    event MP(uint256 indexed id, bytes32 nameHash, address ex);
+    event MS(uint256 indexed id, uint256 total);
+    event BM(uint256 indexed id, uint256 bn, uint256 rc);
+    event MC(uint256 indexed id, uint256 done);
+    event MPa(uint256 indexed id, address by);
+    event MR(uint256 indexed id, address by);
+    event RBE(uint256 indexed id, bytes32 reasonHash);
+    event EP(address indexed admin, bytes32 reasonHash);
+    event ER(address indexed admin);
 
     constructor(address _verificationLogger, address _contractRegistry) {
-        require(_verificationLogger != address(0), "Invalid verification logger");
-        require(_contractRegistry != address(0), "Invalid contract registry");
+        if (_verificationLogger == address(0)) revert InvalidAddr();
+        if (_contractRegistry == address(0)) revert InvalidAddr();
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(MIGRATION_ADMIN_ROLE, msg.sender);
@@ -136,15 +140,16 @@ contract MigrationManager is AccessControl, ReentrancyGuard {
         rollbackWindow = 7 days;
     }
 
-    // --- Explicit Fieldwise Getters for Migration struct ---
-    function getMigrationInfo(uint256 id)
+    // Views
+    function getMigrationInfo(
+        uint256 id
+    )
         external
         view
         returns (
-            string memory name,
-            string memory description,
-            string memory fromVersion,
-            string memory toVersion,
+            bytes32 nameHash,
+            bytes32 fromVersionHash,
+            bytes32 toVersionHash,
             address executor,
             MigrationStatus status,
             uint256 plannedAt,
@@ -158,142 +163,128 @@ contract MigrationManager is AccessControl, ReentrancyGuard {
         )
     {
         Migration storage m = migrations[id];
-        name = m.name;
-        description = m.description;
-        fromVersion = m.fromVersion;
-        toVersion = m.toVersion;
-        executor = m.migrationExecutor;
-        status = m.status;
-        plannedAt = m.plannedAt;
-        startedAt = m.startedAt;
-        completedAt = m.completedAt;
-        totalRecords = m.totalRecords;
-        migratedRecords = m.migratedRecords;
-        failedRecords = m.failedRecords;
-        hasRollbackPlan = m.hasRollbackPlan;
-        migrationHash = m.migrationHash;
+        return (
+            m.nameHash,
+            m.fromVersionHash,
+            m.toVersionHash,
+            m.migrationExecutor,
+            m.status,
+            m.plannedAt,
+            m.startedAt,
+            m.completedAt,
+            m.totalRecords,
+            m.migratedRecords,
+            m.failedRecords,
+            m.hasRollbackPlan,
+            m.migrationHash
+        );
     }
 
-    function getMigrationArrays(uint256 id)
+    function getMigrationArrays(
+        uint256 id
+    )
         external
         view
-        returns (DataType[] memory dataTypes, address[] memory contractsToMigrate)
+        returns (
+            DataType[] memory dataTypes,
+            address[] memory contractsToMigrate
+        )
     {
         Migration storage m = migrations[id];
-        dataTypes = m.dataTypes;
-        contractsToMigrate = m.contractsToMigrate;
+        return (m.dataTypes, m.contractsToMigrate);
     }
 
-    function getMigrationErrors(uint256 id)
-        external
-        view
-        returns (string memory errorMessage, bytes memory rollbackData)
-    {
-        Migration storage m = migrations[id];
-        errorMessage = m.errorMessage;
-        rollbackData = m.rollbackData;
-    }
-
-    // -------------------------------------------------------
-
-    // --- Migration logic, using fieldwise assignments only ---
+    // Core logic
     function planMigration(
-        string memory name,
-        string memory description,
-        string memory fromVersion,
-        string memory toVersion,
-        DataType[] memory dataTypes,
-        address[] memory contractsToMigrate,
+        string calldata name,
+        string calldata fromVersion,
+        string calldata toVersion,
+        DataType[] calldata dataTypes,
+        address[] calldata contractsToMigrate,
         uint256 estimatedRecords,
-        bytes memory rollbackData
+        bytes calldata rollbackData
     ) external onlyRole(MIGRATION_ADMIN_ROLE) returns (uint256) {
-        require(bytes(name).length > 0, "Empty migration name");
-        require(bytes(description).length > 0, "Empty description");
-        require(bytes(fromVersion).length > 0, "Empty from version");
-        require(bytes(toVersion).length > 0, "Empty to version");
-        require(dataTypes.length > 0, "No data types specified");
-        require(contractsToMigrate.length > 0, "No contracts to migrate");
-        require(estimatedRecords > 0, "Invalid estimated records");
+        if (bytes(name).length == 0) revert EmptyName();
+        if (bytes(fromVersion).length == 0) revert EmptyFromVer();
+        if (bytes(toVersion).length == 0) revert EmptyToVer();
+        if (dataTypes.length == 0) revert NoDataTypes();
+        if (contractsToMigrate.length == 0) revert NoContracts();
+        if (estimatedRecords == 0) revert InvalidRecords();
 
         migrationCounter++;
         uint256 id = migrationCounter;
+        bytes32 nameHash = keccak256(bytes(name));
+        bytes32 fromHash = keccak256(bytes(fromVersion));
+        bytes32 toHash = keccak256(bytes(toVersion));
 
-        // Field-by-field assignment instead of struct literal!
         Migration storage m = migrations[id];
         m.id = id;
-        m.name = name;
-        m.description = description;
-        m.fromVersion = fromVersion;
-        m.toVersion = toVersion;
-        for (uint256 i; i < dataTypes.length; i++) {
+        m.nameHash = nameHash;
+        m.fromVersionHash = fromHash;
+        m.toVersionHash = toHash;
+        for (uint256 i; i < dataTypes.length; i++)
             m.dataTypes.push(dataTypes[i]);
-        }
-        for (uint256 i; i < contractsToMigrate.length; i++) {
+        for (uint256 i; i < contractsToMigrate.length; i++)
             m.contractsToMigrate.push(contractsToMigrate[i]);
-        }
         m.migrationExecutor = msg.sender;
         m.plannedAt = block.timestamp;
-        m.startedAt = 0;
-        m.completedAt = 0;
         m.status = MigrationStatus.Planned;
         m.totalRecords = estimatedRecords;
-        m.migratedRecords = 0;
-        m.failedRecords = 0;
         m.hasRollbackPlan = rollbackData.length > 0;
         m.rollbackData = rollbackData;
-        m.errorMessage = "";
-        m.migrationHash = keccak256(abi.encodePacked(name, contractsToMigrate, block.timestamp));
+        m.migrationHash = keccak256(
+            abi.encodePacked(nameHash, contractsToMigrate, block.timestamp)
+        );
 
         activeMigrations.push(id);
 
-        verificationLogger.logEvent("MIGRATION_PLANNED", msg.sender, m.migrationHash);
-        emit MigrationPlanned(id, name, msg.sender);
+        verificationLogger.logEvent("MP", msg.sender, m.migrationHash);
+        emit MP(id, nameHash, msg.sender);
         return id;
     }
 
-    function startMigration(uint256 id) external onlyRole(MIGRATION_ADMIN_ROLE) nonReentrant {
-        require(!emergencyPauseEnabled, "Emergency pause enabled");
+    function startMigration(
+        uint256 id
+    ) external onlyRole(MIGRATION_ADMIN_ROLE) nonReentrant {
+        if (emergencyPauseEnabled) revert EmergPaused();
         Migration storage m = migrations[id];
-        require(m.status == MigrationStatus.Planned || m.status == MigrationStatus.Paused, "InvalidMigrationStatus");
-        require(m.migrationExecutor == msg.sender, "NotAuthorized");
-
-        for (uint256 i; i < m.contractsToMigrate.length; i++) {
-            _createStateSnapshot(m.contractsToMigrate[i]);
-        }
-
+        if (
+            !(m.status == MigrationStatus.Planned ||
+                m.status == MigrationStatus.Paused)
+        ) revert NotPlannedOrPaused();
+        if (m.migrationExecutor != msg.sender) revert NotAuthorized();
         m.status = MigrationStatus.InProgress;
         m.startedAt = block.timestamp;
-
-        verificationLogger.logEvent("MIGRATION_STARTED", msg.sender, m.migrationHash);
-        emit MigrationStarted(id, m.totalRecords);
+        verificationLogger.logEvent("MS", msg.sender, m.migrationHash);
+        emit MS(id, m.totalRecords);
     }
 
-    function executeBatchMigration(uint256 id, uint256 batchNumber, bytes memory batchData, uint256 recordCount)
-        external
-        onlyRole(MIGRATION_ADMIN_ROLE)
-    {
-        require(batchData.length > 0, "Empty batch data");
-        require(recordCount > 0, "Invalid record count");
-        require(recordCount <= maxBatchSize, "Batch too large");
-
+    function executeBatchMigration(
+        uint256 id,
+        uint256 batchNumber,
+        bytes calldata batchData,
+        uint256 recordCount
+    ) external onlyRole(MIGRATION_ADMIN_ROLE) {
+        if (batchData.length == 0) revert EmptyBatch();
+        if (recordCount == 0) revert InvalidCount();
+        if (recordCount > maxBatchSize) revert BatchTooLarge();
         Migration storage m = migrations[id];
-        require(m.status == MigrationStatus.InProgress, "Migration not in progress");
+        if (m.status != MigrationStatus.InProgress) revert NotInProgress();
 
         bytes32 hash = keccak256(batchData);
         bool success;
-        string memory errorDetails;
-
+        bytes32 code;
         try this.processBatchData(batchData) {
             m.migratedRecords += recordCount;
             success = true;
         } catch Error(string memory err) {
             m.failedRecords += recordCount;
             success = false;
-            errorDetails = err;
+            code = keccak256(bytes(err));
         } catch {
             m.failedRecords += recordCount;
             success = false;
-            errorDetails = "UnknownError";
+            code = keccak256("UnknownError");
         }
 
         migrationBatches[id].push(
@@ -304,156 +295,110 @@ contract MigrationManager is AccessControl, ReentrancyGuard {
                 dataHash: hash,
                 processedAt: block.timestamp,
                 isSuccessful: success,
-                errorDetails: errorDetails
+                errorCode: code
             })
         );
 
-        verificationLogger.logEvent(success ? "BATCH_MIGRATION_SUCCESS" : "BATCH_MIGRATION_FAILED", msg.sender, hash);
-        emit BatchMigrated(id, batchNumber, recordCount);
+        verificationLogger.logEvent(success ? "BMS" : "BMF", msg.sender, hash);
+        emit BM(id, batchNumber, recordCount);
     }
 
-    function completeMigration(uint256 id) external onlyRole(MIGRATION_ADMIN_ROLE) {
+    function completeMigration(
+        uint256 id
+    ) external onlyRole(MIGRATION_ADMIN_ROLE) {
         Migration storage m = migrations[id];
-        require(m.status == MigrationStatus.InProgress, "NotInProgress");
-        require(m.migrationExecutor == msg.sender, "NotAuthorized");
-
+        if (m.status != MigrationStatus.InProgress) revert NotInProgress();
+        if (m.migrationExecutor != msg.sender) revert NotAuthorized();
         m.status = MigrationStatus.Completed;
         m.completedAt = block.timestamp;
-        verificationLogger.logEvent("MIGRATION_COMPLETED", msg.sender, m.migrationHash);
-        emit MigrationCompleted(id, m.migratedRecords);
-
+        verificationLogger.logEvent("MC", msg.sender, m.migrationHash);
+        emit MC(id, m.migratedRecords);
         _removeActiveMigration(id);
-
         for (uint256 i; i < m.contractsToMigrate.length; i++) {
-            string memory name = _getContractName(m.contractsToMigrate[i]);
-            contractVersions[name] = m.toVersion;
+            bytes32 nameHash = keccak256(
+                bytes(_getContractName(m.contractsToMigrate[i]))
+            );
+            contractVersions[nameHash] = m.toVersionHash;
         }
     }
 
-    function pauseMigration(uint256 id, string memory reason) external onlyRole(MIGRATION_ADMIN_ROLE) {
+    function pauseMigration(
+        uint256 id,
+        string calldata reason
+    ) external onlyRole(MIGRATION_ADMIN_ROLE) {
         Migration storage m = migrations[id];
-        require(m.status == MigrationStatus.InProgress, "NotInProgress");
+        if (m.status != MigrationStatus.InProgress) revert NotInProgress();
         m.status = MigrationStatus.Paused;
-        verificationLogger.logEvent("MIGRATION_PAUSED", msg.sender, keccak256(bytes(reason)));
-        emit MigrationPaused(id, msg.sender);
+        bytes32 rh = keccak256(bytes(reason));
+        verificationLogger.logEvent("MPa", msg.sender, rh);
+        emit MPa(id, msg.sender);
     }
 
-    function resumeMigration(uint256 id) external onlyRole(MIGRATION_ADMIN_ROLE) {
+    function resumeMigration(
+        uint256 id
+    ) external onlyRole(MIGRATION_ADMIN_ROLE) {
         Migration storage m = migrations[id];
-        require(m.status == MigrationStatus.Paused, "NotPaused");
-        require(!emergencyPauseEnabled, "SystemPaused");
+        if (m.status != MigrationStatus.Paused) revert NotPaused();
+        if (emergencyPauseEnabled) revert EmergPaused();
         m.status = MigrationStatus.InProgress;
-        verificationLogger.logEvent("MIGRATION_RESUMED", msg.sender, m.migrationHash);
-        emit MigrationResumed(id, msg.sender);
+        verificationLogger.logEvent("MR", msg.sender, m.migrationHash);
+        emit MR(id, msg.sender);
     }
 
-    function rollbackMigration(uint256 id, string memory reason) external onlyRole(MIGRATION_ADMIN_ROLE) nonReentrant {
+    function rollbackMigration(
+        uint256 id,
+        string calldata reason
+    ) external onlyRole(MIGRATION_ADMIN_ROLE) nonReentrant {
         Migration storage m = migrations[id];
-        require(m.status == MigrationStatus.Completed || m.status == MigrationStatus.Failed, "NotRollbackable");
-        require(m.hasRollbackPlan, "NoRollbackPlan");
-        require(block.timestamp <= m.completedAt + rollbackWindow, "WindowExpired");
-
+        if (
+            !(m.status == MigrationStatus.Completed ||
+                m.status == MigrationStatus.Failed)
+        ) revert NotRollbackable();
+        if (!m.hasRollbackPlan) revert NoRollbackPlan();
+        if (block.timestamp > m.completedAt + rollbackWindow)
+            revert WindowExpired();
         m.status = MigrationStatus.Rollback;
         _executeRollback(id, m.rollbackData);
-        for (uint256 i; i < m.contractsToMigrate.length; i++) {
-            _restoreStateSnapshot(m.contractsToMigrate[i]);
-        }
-        verificationLogger.logEvent("ROLLBACK_EXECUTED", msg.sender, m.migrationHash);
-        emit RollbackExecuted(id, reason);
+        bytes32 rh = keccak256(bytes(reason));
+        verificationLogger.logEvent("RBE", msg.sender, m.migrationHash);
+        emit RBE(id, rh);
     }
 
-    function emergencyPause(string memory reason) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function emergencyPause(
+        string calldata reason
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         emergencyPauseEnabled = true;
-        verificationLogger.logEvent("EMERGENCY_PAUSE", msg.sender, keccak256(bytes(reason)));
-        emit EmergencyPause(msg.sender, reason);
+        bytes32 rh = keccak256(bytes(reason));
+        verificationLogger.logEvent("EP", msg.sender, rh);
+        emit EP(msg.sender, rh);
     }
 
     function emergencyResume() external onlyRole(DEFAULT_ADMIN_ROLE) {
         emergencyPauseEnabled = false;
-        verificationLogger.logEvent("EMERGENCY_RESUME", msg.sender, bytes32(0));
-        emit EmergencyResume(msg.sender);
+        verificationLogger.logEvent("ER", msg.sender, bytes32(0));
+        emit ER(msg.sender);
     }
 
-    function processBatchData(bytes memory data) external view {
-        require(msg.sender == address(this), "InternalOnly");
-        require(data.length > 0, "EmptyBatch");
+    function processBatchData(bytes calldata data) external view {
+        if (msg.sender != address(this)) revert InternalOnly();
+        if (data.length == 0) revert EmptyBatch();
     }
 
     function _executeRollback(uint256, bytes memory) private {}
 
-    function _createStateSnapshot(address c) private returns (uint256) {
-        snapshotCounter++;
-        uint256 id = snapshotCounter;
-        bytes memory st = abi.encodePacked("snap", c, block.timestamp);
-        bytes32 h = keccak256(st);
-        stateSnapshots[id] = StateSnapshot({
-            snapshotId: id,
-            contractName: _getContractName(c),
-            contractState: st,
-            stateHash: h,
-            blockNumber: block.number,
-            timestamp: block.timestamp,
-            isActive: true
-        });
-        emit StateSnapshotEvent(id, _getContractName(c), h);
-        return id;
-    }
-
-    function _restoreStateSnapshot(address c) private {
-        string memory name = _getContractName(c);
-        for (uint256 i = snapshotCounter; i > 0; i--) {
-            StateSnapshot storage s = stateSnapshots[i];
-            if (keccak256(bytes(s.contractName)) == keccak256(bytes(name)) && s.isActive) {
-                s.isActive = false;
-                break;
-            }
-        }
-    }
-
-    function backupData(string memory cn, string memory dt, bytes memory d)
-        external
-        onlyRole(MIGRATION_ADMIN_ROLE)
-        returns (bytes32)
-    {
-        bytes32 h = keccak256(abi.encodePacked(cn, dt, d, block.timestamp));
-        dataBackups[h] = DataBackup(cn, dt, d, h, block.timestamp, contractVersions[cn], false);
-        verificationLogger.logEvent("DATA_BACKED_UP", msg.sender, h);
-        emit DataBackedUp(cn, dt, h);
-        return h;
-    }
-
-    function restoreData(bytes32 h) external onlyRole(MIGRATION_ADMIN_ROLE) {
-        DataBackup storage b = dataBackups[h];
-        require(b.backupHash == h, "NoBackup");
-        require(!b.isRestored, "AlreadyRestored");
-        b.isRestored = true;
-        verificationLogger.logEvent("DATA_RESTORED", msg.sender, h);
-        emit DataRestored(b.contractName, h);
-    }
-
-    function setMaxBatchSize(uint256 s) external onlyRole(MIGRATION_ADMIN_ROLE) {
-        require(s > 0 && s <= 10000, "InvalidSize");
-        maxBatchSize = s;
-    }
-
-    function setMigrationTimeout(uint256 t) external onlyRole(MIGRATION_ADMIN_ROLE) {
-        require(t >= 1 hours && t <= 168 hours, "InvalidTimeout");
-        migrationTimeout = t;
-    }
-
-    function setRollbackWindow(uint256 w) external onlyRole(MIGRATION_ADMIN_ROLE) {
-        require(w >= 1 days && w <= 30 days, "InvalidWindow");
-        rollbackWindow = w;
-    }
-
-    function authorizeContract(address c, bool a) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function authorizeContract(
+        address c,
+        bool a
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         authorizedMigrationContracts[c] = a;
     }
 
     function _removeActiveMigration(uint256 id) private {
         for (uint256 i; i < activeMigrations.length; i++) {
             if (activeMigrations[i] == id) {
-                activeMigrations[i] = activeMigrations[activeMigrations.length - 1];
+                activeMigrations[i] = activeMigrations[
+                    activeMigrations.length - 1
+                ];
                 activeMigrations.pop();
                 break;
             }

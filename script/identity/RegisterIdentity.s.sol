@@ -17,7 +17,10 @@ contract RegisterIdentity is Script {
     function run() external {
         address registryAddr = vm.envAddress("REGISTRY_ADDRESS");
         address user = vm.envOr("USER_ADDRESS", address(0));
-        bytes32 providedCommitment = vm.envOr("IDENTITY_COMMITMENT", bytes32(0));
+        bytes32 providedCommitment = vm.envOr(
+            "IDENTITY_COMMITMENT",
+            bytes32(0)
+        );
 
         require(registryAddr != address(0), "REGISTRY_ADDRESS not set");
 

@@ -11,14 +11,22 @@ contract DeployAll is Script {
         vm.startBroadcast();
 
         VerificationLogger verificationLogger = new VerificationLogger();
-        console.log("VerificationLogger deployed at:", address(verificationLogger));
+        console.log(
+            "VerificationLogger deployed at:",
+            address(verificationLogger)
+        );
 
         TrustScore trustScore = new TrustScore(address(verificationLogger));
         console.log("TrustScore deployed at:", address(trustScore));
 
-        UserIdentityRegistry userIdentityRegistry =
-            new UserIdentityRegistry(address(verificationLogger), address(trustScore));
-        console.log("UserIdentityRegistry deployed at:", address(userIdentityRegistry));
+        UserIdentityRegistry userIdentityRegistry = new UserIdentityRegistry(
+            address(verificationLogger),
+            address(trustScore)
+        );
+        console.log(
+            "UserIdentityRegistry deployed at:",
+            address(userIdentityRegistry)
+        );
 
         vm.stopBroadcast();
     }

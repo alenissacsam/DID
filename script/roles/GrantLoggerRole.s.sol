@@ -15,7 +15,10 @@ contract GrantLoggerRole is Script {
     function run() external {
         address loggerAddr = vm.envAddress("LOGGER_ADDRESS");
         address grantee = vm.envAddress("GRANTEE_ADDRESS");
-        require(loggerAddr != address(0) && grantee != address(0), "missing envs");
+        require(
+            loggerAddr != address(0) && grantee != address(0),
+            "missing envs"
+        );
 
         uint256 pk = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(pk);

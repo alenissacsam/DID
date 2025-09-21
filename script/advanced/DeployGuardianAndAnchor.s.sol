@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import {Script, console} from "forge-std/Script.sol";
-import {GuardianManager} from "../../src/advanced_features/GuardianManager.sol";
-import {GlobalCredentialAnchor} from "../../src/privacy_cross-chain/GlobalCredentialAnchor.sol";
+import {Script} from "forge-std/Script.sol";
+import {DeployLib} from "../deploy/DeployLib.sol";
+import {ZkKeyRegistry} from "../../src/privacy_cross-chain/ZkKeyRegistry.sol";
 
 contract DeployGuardianAndAnchor is Script {
     function run() external {
@@ -13,13 +13,12 @@ contract DeployGuardianAndAnchor is Script {
 
         uint256 pk = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(pk);
-
-        GuardianManager guardian = new GuardianManager(logger, registry, trust);
-        console.log("GuardianManager:", address(guardian));
-
-        GlobalCredentialAnchor anchor = new GlobalCredentialAnchor(logger);
-        console.log("GlobalCredentialAnchor:", address(anchor));
-
+        (, , ZkKeyRegistry zkReg) = DeployLib.deployGuardianAnchor(
+            logger,
+            registry,
+            trust
+        );
+        zkReg; // silence warning
         vm.stopBroadcast();
     }
 }

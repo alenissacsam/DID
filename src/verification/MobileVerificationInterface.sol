@@ -2,7 +2,7 @@
 pragma solidity ^0.8.19;
 
 import "./OfflineVerificationManager.sol";
-import "./OfflineVerificationUtils.sol";
+import "../libs/OfflineVerificationUtils.sol";
 
 /**
  * @title MobileVerificationInterface
@@ -41,10 +41,19 @@ contract MobileVerificationInterface {
 
     // Events for mobile verification tracking
     event MobileVerificationPerformed(
-        address indexed verifier, bytes32 indexed credentialHash, bool isValid, string status, uint256 timestamp
+        address indexed verifier,
+        bytes32 indexed credentialHash,
+        bool isValid,
+        string status,
+        uint256 timestamp
     );
 
-    event QRCodeGenerated(address indexed holder, string credentialType, string qrCodeData, uint256 expiresAt);
+    event QRCodeGenerated(
+        address indexed holder,
+        string credentialType,
+        string qrCodeData,
+        uint256 expiresAt
+    );
 
     constructor(address _verificationManager) {
         verificationManager = OfflineVerificationManager(_verificationManager);
@@ -55,12 +64,16 @@ contract MobileVerificationInterface {
      * @param qrData Base64 encoded QR code data
      * @return response Verification response with user-friendly information
      */
-    function verifyFromQR(bytes memory qrData) external returns (VerificationResponse memory response) {
+    function verifyFromQR(
+        bytes memory qrData
+    ) external returns (VerificationResponse memory response) {
         // Decode QR data to credential
-        OfflineVerificationManager.OfflineCredential memory credential = _decodeQRData(qrData);
+        OfflineVerificationManager.OfflineCredential
+            memory credential = _decodeQRData(qrData);
 
         // Perform verification
-        (bool isValid, string memory reason) = verificationManager.verifyOfflineCredential(credential);
+        (bool isValid, string memory reason) = verificationManager
+            .verifyOfflineCredential(credential);
 
         response = VerificationResponse({
             isValid: isValid,
@@ -87,7 +100,11 @@ contract MobileVerificationInterface {
         }
 
         emit MobileVerificationPerformed(
-            msg.sender, _getCredentialHash(credential), isValid, response.status, block.timestamp
+            msg.sender,
+            _getCredentialHash(credential),
+            isValid,
+            response.status,
+            block.timestamp
         );
     }
 
@@ -107,7 +124,9 @@ contract MobileVerificationInterface {
         string memory issuerName = _getIssuerName(credential.issuer);
 
         // Generate QR code data
-        bytes memory qrCodeData = verificationManager.generateQRData(credential);
+        bytes memory qrCodeData = verificationManager.generateQRData(
+            credential
+        );
 
         mobileCredential = MobileCredential({
             holder: credential.holder,
@@ -125,7 +144,10 @@ contract MobileVerificationInterface {
         });
 
         emit QRCodeGenerated(
-            credential.holder, credential.credentialType, mobileCredential.qrCodeData, credential.expiresAt
+            credential.holder,
+            credential.credentialType,
+            mobileCredential.qrCodeData,
+            credential.expiresAt
         );
     }
 
@@ -135,7 +157,9 @@ contract MobileVerificationInterface {
      * @return isValid Simple boolean result for fast verification
      * @return statusCode Numeric status code for mobile apps
      */
-    function quickVerify(bytes32 credentialHash) external view returns (bool isValid, uint8 statusCode) {
+    function quickVerify(
+        bytes32 credentialHash
+    ) external view returns (bool isValid, uint8 statusCode) {
         // Check if revoked
         if (verificationManager.isCredentialRevoked(credentialHash)) {
             return (false, 2); // Status code 2 = REVOKED
@@ -151,11 +175,9 @@ contract MobileVerificationInterface {
      * @param qrDataArray Array of QR code data
      * @return responses Array of verification responses
      */
-    function batchVerifyFromQR(bytes[] memory qrDataArray)
-        external
-        view
-        returns (VerificationResponse[] memory responses)
-    {
+    function batchVerifyFromQR(
+        bytes[] memory qrDataArray
+    ) external view returns (VerificationResponse[] memory responses) {
         responses = new VerificationResponse[](qrDataArray.length);
 
         for (uint256 i = 0; i < qrDataArray.length; i++) {
@@ -169,23 +191,25 @@ contract MobileVerificationInterface {
      * @return verificationCount Number of times verified
      * @return lastVerified Timestamp of last verification
      */
-    function getVerificationStats(bytes32 credentialHash)
-        external
-        view
-        returns (uint256 verificationCount, uint256 lastVerified)
-    {
+    function getVerificationStats(
+        bytes32 credentialHash
+    ) external view returns (uint256 verificationCount, uint256 lastVerified) {
         // In a full implementation, this would track verification events
         // For now, return placeholder values
         return (0, 0);
     }
 
     // Internal helper functions
-    function _verifyFromQRInternal(bytes memory qrData) internal view returns (VerificationResponse memory response) {
+    function _verifyFromQRInternal(
+        bytes memory qrData
+    ) internal view returns (VerificationResponse memory response) {
         // Decode QR data to credential
-        OfflineVerificationManager.OfflineCredential memory credential = _decodeQRData(qrData);
+        OfflineVerificationManager.OfflineCredential
+            memory credential = _decodeQRData(qrData);
 
         // Perform verification
-        (bool isValid, string memory reason) = verificationManager.verifyOfflineCredential(credential);
+        (bool isValid, string memory reason) = verificationManager
+            .verifyOfflineCredential(credential);
 
         response = VerificationResponse({
             isValid: isValid,
@@ -212,7 +236,9 @@ contract MobileVerificationInterface {
         }
     }
 
-    function _decodeQRData(bytes memory qrData)
+    function _decodeQRData(
+        bytes memory qrData
+    )
         internal
         pure
         returns (OfflineVerificationManager.OfflineCredential memory credential)
@@ -225,38 +251,54 @@ contract MobileVerificationInterface {
             credential.issuedAt,
             credential.expiresAt,
             credential.signature
-        ) = abi.decode(qrData, (address, string, bytes32, uint256, uint256, bytes));
+        ) = abi.decode(
+            qrData,
+            (address, string, bytes32, uint256, uint256, bytes)
+        );
 
         // Note: In production, the issuer and nonce would also be encoded
         // This is simplified for demonstration
     }
 
-    function _getMaskedAddress(address addr) internal pure returns (string memory) {
+    function _getMaskedAddress(
+        address addr
+    ) internal pure returns (string memory) {
         string memory addrStr = _addressToString(addr);
         // Return first 6 and last 4 characters with dots in between
-        bytes memory masked = abi.encodePacked(_substring(addrStr, 0, 6), "...", _substring(addrStr, 38, 42));
+        bytes memory masked = abi.encodePacked(
+            _substring(addrStr, 0, 6),
+            "...",
+            _substring(addrStr, 38, 42)
+        );
         return string(masked);
     }
 
-    function _formatCredentialInfo(OfflineVerificationManager.OfflineCredential memory credential)
-        internal
-        view
-        returns (string memory)
-    {
+    function _formatCredentialInfo(
+        OfflineVerificationManager.OfflineCredential memory credential
+    ) internal view returns (string memory) {
         string memory issuerName = _getIssuerName(credential.issuer);
-        return string(
-            abi.encodePacked(
-                credential.credentialType,
-                " issued by ",
-                issuerName,
-                credential.expiresAt > 0
-                    ? string(abi.encodePacked(" (expires ", _timestampToDate(credential.expiresAt), ")"))
-                    : " (no expiry)"
-            )
-        );
+        return
+            string(
+                abi.encodePacked(
+                    credential.credentialType,
+                    " issued by ",
+                    issuerName,
+                    credential.expiresAt > 0
+                        ? string(
+                            abi.encodePacked(
+                                " (expires ",
+                                _timestampToDate(credential.expiresAt),
+                                ")"
+                            )
+                        )
+                        : " (no expiry)"
+                )
+            );
     }
 
-    function _getStatusFromReason(string memory reason) internal pure returns (string memory) {
+    function _getStatusFromReason(
+        string memory reason
+    ) internal pure returns (string memory) {
         bytes32 reasonHash = keccak256(bytes(reason));
 
         if (reasonHash == keccak256("Credential expired")) {
@@ -272,34 +314,39 @@ contract MobileVerificationInterface {
         return "INVALID";
     }
 
-    function _getIssuerName(address issuer) internal view returns (string memory) {
+    function _getIssuerName(
+        address issuer
+    ) internal view returns (string memory) {
         // In production, this would lookup issuer names from a registry
         // For now, return a shortened address
         return _getMaskedAddress(issuer);
     }
 
-    function _getCredentialHash(OfflineVerificationManager.OfflineCredential memory credential)
-        internal
-        pure
-        returns (bytes32)
-    {
-        return keccak256(
-            abi.encode(
-                credential.holder,
-                credential.credentialType,
-                credential.dataHash,
-                credential.issuedAt,
-                credential.issuer
-            )
-        );
+    function _getCredentialHash(
+        OfflineVerificationManager.OfflineCredential memory credential
+    ) internal pure returns (bytes32) {
+        return
+            keccak256(
+                abi.encode(
+                    credential.holder,
+                    credential.credentialType,
+                    credential.dataHash,
+                    credential.issuedAt,
+                    credential.issuer
+                )
+            );
     }
 
-    function _bytesToBase64(bytes memory data) internal pure returns (string memory) {
+    function _bytesToBase64(
+        bytes memory data
+    ) internal pure returns (string memory) {
         // Simplified base64 encoding - in production use a proper library
         return "BASE64_ENCODED_DATA";
     }
 
-    function _addressToString(address addr) internal pure returns (string memory) {
+    function _addressToString(
+        address addr
+    ) internal pure returns (string memory) {
         bytes32 value = bytes32(uint256(uint160(addr)));
         bytes memory alphabet = "0123456789abcdef";
         bytes memory str = new bytes(42);
@@ -312,11 +359,11 @@ contract MobileVerificationInterface {
         return string(str);
     }
 
-    function _substring(string memory str, uint256 startIndex, uint256 endIndex)
-        internal
-        pure
-        returns (string memory)
-    {
+    function _substring(
+        string memory str,
+        uint256 startIndex,
+        uint256 endIndex
+    ) internal pure returns (string memory) {
         bytes memory strBytes = bytes(str);
         bytes memory result = new bytes(endIndex - startIndex);
         for (uint256 i = startIndex; i < endIndex; i++) {
@@ -325,7 +372,9 @@ contract MobileVerificationInterface {
         return string(result);
     }
 
-    function _timestampToDate(uint256 timestamp) internal pure returns (string memory) {
+    function _timestampToDate(
+        uint256 timestamp
+    ) internal pure returns (string memory) {
         // Simplified date formatting - in production use a proper date library
         return string(abi.encodePacked("Timestamp: ", _uint2str(timestamp)));
     }

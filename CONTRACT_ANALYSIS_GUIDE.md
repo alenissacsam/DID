@@ -41,13 +41,8 @@ These are the foundational contracts that almost everything else depends on. Ana
 - **Dependencies**: VerificationLogger
 - **Used By**: Governance, verification contracts, economic incentives
 
-### 4. `src/core/SystemToken.sol`
-**Priority: HIGH** ⭐⭐⭐⭐
-- **Purpose**: Native ERC20 token for governance, staking, and payments
-- **Why Fourth**: Economic foundation for the platform
-- **Key Functions**: `mint()`, `burn()`, `pause()`
-- **Dependencies**: VerificationLogger
-- **Used By**: Economic incentives, governance, dispute resolution
+### 4. System token (removed)
+Note: The native ERC20 token previously used for staking/payments has been removed per the latest requirements. All staking/economic flows depending on it are deprecated.
 
 ---
 
@@ -155,29 +150,19 @@ These contracts manage institutions and the credentials they issue.
 
 These contracts handle platform governance, economic incentives, and dispute resolution.
 
-### 16. `src/governance/GovernanceManager.sol`
-**Priority: HIGH** ⭐⭐⭐⭐
-- **Purpose**: DAO governance for platform decisions
-- **Analysis Focus**: Proposal lifecycle, voting mechanisms, execution
-- **Key Functions**: `createProposal()`, `vote()`, `executeProposal()`
-- **Dependencies**: TrustScore, VerificationLogger, EconomicIncentives
-- **Critical**: Controls organization approvals and system parameters
+### 16. GovernanceManager (removed)
+Note: The previous DAO-style `GovernanceManager` has been removed to reduce scope. Where needed, admin functions are gated via AccessControl on individual managers.
 
 ### 17. `src/governance/DisputeResolution.sol`
 **Priority: MEDIUM** ⭐⭐⭐
 - **Purpose**: Handles disputes between users and organizations
 - **Analysis Focus**: Dispute lifecycle, arbitration, penalties
 - **Key Functions**: `raiseDispute()`, `submitEvidence()`, `resolveDispute()`
-- **Dependencies**: VerificationLogger, EconomicIncentives, TrustScore, SystemToken
-- **Special**: Can affect trust scores and economic penalties
+- **Dependencies**: VerificationLogger, TrustScore
+- **Special**: Can affect trust scores; economics/staking references removed
 
-### 18. `src/advanced_features/EconomicIncentives.sol`
-**Priority: MEDIUM** ⭐⭐⭐
-- **Purpose**: Staking rewards and economic mechanism management
-- **Analysis Focus**: Reward calculation, staking mechanics, token economics
-- **Key Functions**: `stake()`, `unstake()`, `claimRewards()`, `calculateRewards()`
-- **Dependencies**: SystemToken, TrustScore, VerificationLogger
-- **Integration**: Mints rewards, manages staking pools
+### 18. Economic incentives (removed)
+Note: Staking, rewards, and token economics have been removed. Any prior references to `EconomicIncentives.sol` are deprecated.
 
 ---
 
@@ -204,10 +189,10 @@ These contracts provide advanced functionality like AA wallets, gas management, 
 ### 21. `src/advanced_features/PaymasterManager.sol`
 **Priority: MEDIUM** ⭐⭐⭐
 - **Purpose**: Gas sponsorship for user operations
-- **Analysis Focus**: Gas policies, sponsorship rules, payment mechanisms
-- **Key Functions**: `sponsorUserOp()`, `setGasPolicy()`, `withdrawStake()`
-- **Dependencies**: VerificationLogger, TrustScore, SystemToken
-- **Integration**: Works with AAWalletManager for gasless UX
+- **Analysis Focus**: Gas policies, sponsorship rules
+- **Key Functions**: `sponsorUserOp()`, `setGasPolicy()`
+- **Dependencies**: VerificationLogger, TrustScore
+- **Integration**: Works with AAWalletManager for gasless UX; SystemToken dependency removed
 
 ### 22. `src/advanced_features/EduCertEntryPoint.sol`
 **Priority: HIGH** ⭐⭐⭐⭐
@@ -338,7 +323,7 @@ Analyze how all contracts work together as a complete system.
 2. **Role Propagation**: How roles are granted and used across contracts
 3. **Event Logging**: How all contracts consistently log to VerificationLogger
 4. **Trust Score Impact**: How trust scores affect permissions and functionality
-5. **Token Economics**: How SystemToken flows through the ecosystem
+5. Token Economics: Removed in current version
 6. **Account Abstraction Flow**: How UserOps are processed through the AA infrastructure
 
 ---

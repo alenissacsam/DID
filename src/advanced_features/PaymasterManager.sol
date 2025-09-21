@@ -8,7 +8,17 @@ import "../interfaces/ITrustScore.sol";
 import "../interfaces/IUserIdentityRegistry.sol";
 
 contract PaymasterManager is AccessControl, ReentrancyGuard {
-    bytes32 public constant PAYMASTER_ADMIN_ROLE = keccak256("PAYMASTER_ADMIN_ROLE");
+    // Custom errors to reduce bytecode size
+    error InvalidAddress();
+    error InvalidParam();
+    error NotAuthorized();
+    error NotActive();
+    error PaymasterNotActive();
+    error QuotaExceeded();
+    error NoFundingAvailable();
+
+    bytes32 public constant PAYMASTER_ADMIN_ROLE =
+        keccak256("PAYMASTER_ADMIN_ROLE");
     bytes32 public constant SPONSOR_ROLE = keccak256("SPONSOR_ROLE");
 
     enum SponsorshipType {
@@ -18,7 +28,6 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
         Community, // Community-sponsored
         Premium, // Premium subscription
         Emergency // Emergency transactions
-
     }
 
     enum PaymasterStatus {
@@ -37,12 +46,9 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
         uint256 maxGasLimit; // Maximum gas limit to sponsor
         bool requiresVerification; // Requires identity verification
         uint256 verificationLevel; // Required verification level (0-3)
-        uint256 costPerTx; // Cost per transaction in tokens
         bool isActive;
         uint256 createdAt;
         uint256 updatedAt;
-        string[] allowedFunctions; // Specific functions to sponsor
-        address[] allowedContracts; // Specific contracts to sponsor
     }
 
     struct UserQuota {
@@ -96,9 +102,9 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
     bytes32[] public allSponsoredTxs;
     uint256 public sponsorshipCounter;
 
-    IVerificationLogger public verificationLogger;
-    ITrustScore public trustScore;
-    IUserIdentityRegistry public userRegistry;
+    IVerificationLogger public immutable verificationLogger;
+    ITrustScore public immutable trustScore;
+    IUserIdentityRegistry public immutable userRegistry;
 
     // Global settings
     uint256 public maxDailyGasPerUser;
@@ -108,20 +114,46 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
     uint256 public tokenToGasRate; // How many tokens equal 1 unit of gas
 
     event TransactionSponsored(
-        bytes32 indexed userOpHash, address indexed user, SponsorshipType sponsorType, uint256 gasCost
+        bytes32 indexed userOpHash,
+        address indexed user,
+        SponsorshipType sponsorType,
+        uint256 gasCost
     );
-    event SponsorPoolCreated(address indexed sponsor, string poolName, uint256 initialFunds);
-    event SponsorPoolFunded(address indexed pool, uint256 amount, address funder);
-    event UserQuotaExceeded(address indexed user, SponsorshipType sponsorType, uint256 limit);
-    event PolicyUpdated(SponsorshipType indexed sponsorType, uint256 minTrustScore, uint256 dailyLimit);
+    event SponsorPoolCreated(
+        address indexed sponsor,
+        string poolName,
+        uint256 initialFunds
+    );
+    event SponsorPoolFunded(
+        address indexed pool,
+        uint256 amount,
+        address funder
+    );
+    event UserQuotaExceeded(
+        address indexed user,
+        SponsorshipType sponsorType,
+        uint256 limit
+    );
+    event PolicyUpdated(
+        SponsorshipType indexed sponsorType,
+        uint256 minTrustScore,
+        uint256 dailyLimit
+    );
     event PremiumUserAdded(address indexed user, uint256 expiresAt);
-    event PaymasterStatusChanged(PaymasterStatus oldStatus, PaymasterStatus newStatus);
+    event PaymasterStatusChanged(
+        PaymasterStatus oldStatus,
+        PaymasterStatus newStatus
+    );
     event EmergencyWithdrawal(address indexed admin, uint256 amount);
 
-    constructor(address _verificationLogger, address _trustScore, address _userRegistry) {
-        require(_verificationLogger != address(0), "Invalid verification logger");
-        require(_trustScore != address(0), "Invalid trust score");
-        require(_userRegistry != address(0), "Invalid user registry");
+    constructor(
+        address _verificationLogger,
+        address _trustScore,
+        address _userRegistry
+    ) {
+        if (_verificationLogger == address(0)) revert InvalidAddress();
+        if (_trustScore == address(0)) revert InvalidAddress();
+        if (_userRegistry == address(0)) revert InvalidAddress();
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(PAYMASTER_ADMIN_ROLE, msg.sender);
@@ -146,18 +178,18 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
         bytes32 userOpHash,
         uint256 gasUsed,
         uint256 gasPrice,
-        string memory transactionType,
+        string calldata transactionType,
         SponsorshipType sponsorType
     ) external onlyRole(SPONSOR_ROLE) nonReentrant returns (bool) {
-        require(user != address(0), "Invalid user");
-        require(wallet != address(0), "Invalid wallet");
-        require(userOpHash != bytes32(0), "Invalid user op hash");
-        require(gasUsed > 0 && gasPrice > 0, "Invalid gas parameters");
-        require(bytes(transactionType).length > 0, "Empty transaction type");
-        require(paymasterStatus == PaymasterStatus.Active, "Paymaster not active");
+        if (user == address(0) || wallet == address(0)) revert InvalidAddress();
+        if (userOpHash == bytes32(0)) revert InvalidParam();
+        if (!(gasUsed > 0 && gasPrice > 0)) revert InvalidParam();
+        if (bytes(transactionType).length == 0) revert InvalidParam();
+        if (paymasterStatus != PaymasterStatus.Active)
+            revert PaymasterNotActive();
 
         SponsorshipPolicy memory policy = sponsorshipPolicies[sponsorType];
-        require(policy.isActive, "Sponsorship type not active");
+        if (!policy.isActive) revert NotActive();
 
         // Check eligibility
         if (!_checkEligibility(user, sponsorType, gasUsed, gasPrice)) {
@@ -175,7 +207,7 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
         // Deduct from appropriate pool or credits
         address selectedPool = _selectSponsorPool(sponsorType, totalCost);
         if (selectedPool == address(0) && userCreditBalance[user] < totalCost) {
-            return false; // No funding available
+            return false;
         }
 
         if (selectedPool != address(0)) {
@@ -186,7 +218,9 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
 
         // Record the sponsorship
         sponsorshipCounter++;
-        bytes32 sponsorshipId = keccak256(abi.encodePacked(userOpHash, sponsorshipCounter));
+        bytes32 sponsorshipId = keccak256(
+            abi.encodePacked(userOpHash, sponsorshipCounter)
+        );
 
         sponsoredTransactions[sponsorshipId] = TransactionSponsorship({
             user: user,
@@ -207,7 +241,11 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
 
         // Log the event
         verificationLogger.logEvent(
-            "TRANSACTION_SPONSORED", user, keccak256(abi.encodePacked(userOpHash, uint256(sponsorType), totalCost))
+            "TS",
+            user,
+            keccak256(
+                abi.encodePacked(userOpHash, uint256(sponsorType), totalCost)
+            )
         );
 
         emit TransactionSponsored(userOpHash, user, sponsorType, totalCost);
@@ -215,18 +253,25 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
     }
 
     function createSponsorPool(
-        string memory poolName,
+        string calldata poolName,
         uint256 initialFunding,
-        SponsorshipType[] memory supportedTypes,
+        SponsorshipType[] calldata supportedTypes,
         uint256 expirationPeriod
     ) external payable nonReentrant returns (address) {
-        require(bytes(poolName).length > 0, "Empty pool name");
-        require(initialFunding > 0, "Invalid initial funding");
-        require(msg.value >= initialFunding, "Insufficient funding");
-        require(supportedTypes.length > 0, "No supported types");
+        if (bytes(poolName).length == 0) revert InvalidParam();
+        if (initialFunding == 0) revert InvalidParam();
+        if (msg.value < initialFunding) revert NoFundingAvailable();
+        if (supportedTypes.length == 0) revert InvalidParam();
 
-        address poolAddress =
-            address(uint160(uint256(keccak256(abi.encodePacked(poolName, msg.sender, block.timestamp)))));
+        address poolAddress = address(
+            uint160(
+                uint256(
+                    keccak256(
+                        abi.encodePacked(poolName, msg.sender, block.timestamp)
+                    )
+                )
+            )
+        );
 
         SponsorPool storage pool = sponsorPools[poolAddress];
         pool.sponsor = msg.sender;
@@ -237,7 +282,9 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
         pool.supportedTypes = supportedTypes;
         pool.isActive = true;
         pool.createdAt = block.timestamp;
-        pool.expiresAt = expirationPeriod > 0 ? block.timestamp + expirationPeriod : 0;
+        pool.expiresAt = expirationPeriod > 0
+            ? block.timestamp + expirationPeriod
+            : 0;
 
         // Allocate funds evenly across supported types
         uint256 allocationPerType = initialFunding / supportedTypes.length;
@@ -248,31 +295,44 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
         allSponsorPools.push(poolAddress);
 
         verificationLogger.logEvent(
-            "SPONSOR_POOL_CREATED", msg.sender, keccak256(abi.encodePacked(poolAddress, poolName, initialFunding))
+            "SPC",
+            msg.sender,
+            keccak256(abi.encodePacked(poolAddress, poolName, initialFunding))
         );
 
         emit SponsorPoolCreated(msg.sender, poolName, initialFunding);
         return poolAddress;
     }
 
-    function fundSponsorPool(address poolAddress, uint256 amount) external payable nonReentrant {
-        require(poolAddress != address(0), "Invalid pool address");
-        require(amount > 0, "Invalid amount");
-        require(msg.value >= amount, "Insufficient payment");
+    function fundSponsorPool(
+        address poolAddress,
+        uint256 amount
+    ) external payable nonReentrant {
+        if (poolAddress == address(0)) revert InvalidAddress();
+        if (amount == 0) revert InvalidParam();
+        if (msg.value < amount) revert NoFundingAvailable();
 
         SponsorPool storage pool = sponsorPools[poolAddress];
-        require(pool.isActive, "Pool not active");
-        require(pool.sponsor == msg.sender || hasRole(SPONSOR_ROLE, msg.sender), "Not authorized");
+        if (!pool.isActive) revert NotActive();
+        if (!(pool.sponsor == msg.sender || hasRole(SPONSOR_ROLE, msg.sender)))
+            revert NotAuthorized();
 
         pool.totalFunds += amount;
 
-        verificationLogger.logEvent("SPONSOR_POOL_FUNDED", msg.sender, keccak256(abi.encodePacked(poolAddress, amount)));
+        verificationLogger.logEvent(
+            "SPF",
+            msg.sender,
+            keccak256(abi.encodePacked(poolAddress, amount))
+        );
 
         emit SponsorPoolFunded(poolAddress, amount, msg.sender);
     }
 
-    function addPremiumUser(address user, uint256 duration) external onlyRole(PAYMASTER_ADMIN_ROLE) {
-        require(user != address(0), "Invalid user");
+    function addPremiumUser(
+        address user,
+        uint256 duration
+    ) external onlyRole(PAYMASTER_ADMIN_ROLE) {
+        if (user == address(0)) revert InvalidAddress();
 
         uint256 expiresAt = block.timestamp + duration;
         premiumUsers[user] = true;
@@ -281,7 +341,11 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
         quota.isPremiumUser = true;
         quota.premiumExpiresAt = expiresAt;
 
-        verificationLogger.logEvent("PREMIUM_USER_ADDED", user, keccak256(abi.encodePacked(expiresAt)));
+        verificationLogger.logEvent(
+            "PUA",
+            user,
+            keccak256(abi.encodePacked(expiresAt))
+        );
 
         emit PremiumUserAdded(user, expiresAt);
     }
@@ -306,9 +370,15 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
         policy.updatedAt = block.timestamp;
 
         verificationLogger.logEvent(
-            "SPONSORSHIP_POLICY_UPDATED",
+            "SPU",
             msg.sender,
-            keccak256(abi.encodePacked(uint256(sponsorType), minTrustScore, dailyLimit))
+            keccak256(
+                abi.encodePacked(
+                    uint256(sponsorType),
+                    minTrustScore,
+                    dailyLimit
+                )
+            )
         );
 
         emit PolicyUpdated(sponsorType, minTrustScore, dailyLimit);
@@ -328,31 +398,55 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
         emit PaymasterStatusChanged(oldStatus, PaymasterStatus.Active);
     }
 
-    function emergencyWithdraw(uint256 amount, address payable recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(recipient != address(0), "Invalid recipient");
-        require(address(this).balance >= amount, "Insufficient balance");
-        require(amount <= emergencyGasReserve, "Exceeds emergency reserve");
+    function emergencyWithdraw(
+        uint256 amount,
+        address payable recipient
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (recipient == address(0)) revert InvalidAddress();
+        if (address(this).balance < amount) revert NoFundingAvailable();
+        if (amount > emergencyGasReserve) revert InvalidParam();
 
-        (bool success,) = recipient.call{value: amount}("");
-        require(success, "Withdrawal failed");
+        (bool success, ) = recipient.call{value: amount}("");
+        if (!success) revert NoFundingAvailable();
 
-        verificationLogger.logEvent("EMERGENCY_WITHDRAWAL", msg.sender, keccak256(abi.encodePacked(amount, recipient)));
+        verificationLogger.logEvent(
+            "EW",
+            msg.sender,
+            keccak256(abi.encodePacked(amount, recipient))
+        );
 
         emit EmergencyWithdrawal(msg.sender, amount);
     }
 
-    function getUserQuota(address user, SponsorshipType sponsorType)
+    function getUserQuota(
+        address user,
+        SponsorshipType sponsorType
+    )
         external
         view
-        returns (uint256 dailyUsed, uint256 monthlyUsed, uint256 dailyLimit, uint256 monthlyLimit, bool isPremiumUser)
+        returns (
+            uint256 dailyUsed,
+            uint256 monthlyUsed,
+            uint256 dailyLimit,
+            uint256 monthlyLimit,
+            bool isPremiumUser
+        )
     {
         UserQuota memory quota = userQuotas[user][sponsorType];
         SponsorshipPolicy memory policy = sponsorshipPolicies[sponsorType];
 
-        return (quota.dailyUsed, quota.monthlyUsed, policy.dailyLimit, policy.monthlyLimit, quota.isPremiumUser);
+        return (
+            quota.dailyUsed,
+            quota.monthlyUsed,
+            policy.dailyLimit,
+            policy.monthlyLimit,
+            quota.isPremiumUser
+        );
     }
 
-    function getSponsorPool(address poolAddress)
+    function getSponsorPool(
+        address poolAddress
+    )
         external
         view
         returns (
@@ -375,25 +469,30 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
         );
     }
 
-    function getUserSponsoredTransactions(address user) external view returns (bytes32[] memory) {
+    function getUserSponsoredTransactions(
+        address user
+    ) external view returns (bytes32[] memory) {
         return userSponsoredTxs[user];
     }
 
-    function getUserCreditBalance(address user) external view returns (uint256) {
+    function getUserCreditBalance(
+        address user
+    ) external view returns (uint256) {
         return userCreditBalance[user];
     }
 
-    function canSponsorTransaction(address user, SponsorshipType sponsorType, uint256 gasUsed, uint256 gasPrice)
-        external
-        view
-        returns (bool, string memory)
-    {
+    function canSponsorTransaction(
+        address user,
+        SponsorshipType sponsorType,
+        uint256 gasUsed,
+        uint256 gasPrice
+    ) external view returns (bool, string memory) {
         if (paymasterStatus != PaymasterStatus.Active) {
-            return (false, "Paymaster not active");
+            return (false, "NA"); // Not Active
         }
 
         if (!_checkEligibility(user, sponsorType, gasUsed, gasPrice)) {
-            return (false, "User not eligible");
+            return (false, "NE"); // Not Eligible
         }
 
         uint256 totalCost = gasUsed * gasPrice;
@@ -402,15 +501,20 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
 
         // Check daily limit
         uint256 currentDay = block.timestamp / 1 days;
-        uint256 dailyUsed = (currentDay > quota.lastResetDay) ? 0 : quota.dailyUsed;
+        uint256 dailyUsed = (currentDay > quota.lastResetDay)
+            ? 0
+            : quota.dailyUsed;
 
         if (dailyUsed + totalCost > policy.dailyLimit) {
-            return (false, "Daily limit exceeded");
+            return (false, "DL"); // Daily Limit
         }
 
         // Check if funding is available
-        if (_selectSponsorPool(sponsorType, totalCost) == address(0) && userCreditBalance[user] < totalCost) {
-            return (false, "No funding available");
+        if (
+            _selectSponsorPool(sponsorType, totalCost) == address(0) &&
+            userCreditBalance[user] < totalCost
+        ) {
+            return (false, "NF"); // No Funding
         }
 
         return (true, "");
@@ -450,11 +554,12 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
         status = paymasterStatus;
     }
 
-    function _checkEligibility(address user, SponsorshipType sponsorType, uint256 gasUsed, uint256 gasPrice)
-        private
-        view
-        returns (bool)
-    {
+    function _checkEligibility(
+        address user,
+        SponsorshipType sponsorType,
+        uint256 gasUsed,
+        uint256 gasPrice
+    ) private view returns (bool) {
         SponsorshipPolicy memory policy = sponsorshipPolicies[sponsorType];
 
         // Check if user is registered
@@ -470,23 +575,27 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
 
         // Check verification requirements
         if (policy.requiresVerification) {
-            (,,, uint256 userVerificationLevel) = userRegistry.getVerificationStatus(user);
+            (, , , uint256 userVerificationLevel) = userRegistry
+                .getVerificationStatus(user);
             if (userVerificationLevel < policy.verificationLevel) return false;
         }
 
         // Check premium status for premium sponsorship
         if (sponsorType == SponsorshipType.Premium) {
             UserQuota memory quota = userQuotas[user][sponsorType];
-            if (!quota.isPremiumUser || block.timestamp > quota.premiumExpiresAt) return false;
+            if (
+                !quota.isPremiumUser || block.timestamp > quota.premiumExpiresAt
+            ) return false;
         }
 
         return true;
     }
 
-    function _checkAndUpdateQuota(address user, SponsorshipType sponsorType, uint256 totalCost)
-        private
-        returns (bool)
-    {
+    function _checkAndUpdateQuota(
+        address user,
+        SponsorshipType sponsorType,
+        uint256 totalCost
+    ) private returns (bool) {
         UserQuota storage quota = userQuotas[user][sponsorType];
         SponsorshipPolicy memory policy = sponsorshipPolicies[sponsorType];
 
@@ -518,7 +627,10 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
         return true;
     }
 
-    function _selectSponsorPool(SponsorshipType sponsorType, uint256 amount) private view returns (address) {
+    function _selectSponsorPool(
+        SponsorshipType sponsorType,
+        uint256 amount
+    ) private view returns (address) {
         for (uint256 i = 0; i < allSponsorPools.length; i++) {
             address poolAddr = allSponsorPools[i];
             SponsorPool storage pool = sponsorPools[poolAddr];
@@ -556,12 +668,9 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
             maxGasLimit: 100000,
             requiresVerification: false,
             verificationLevel: 0,
-            costPerTx: 0,
             isActive: true,
             createdAt: block.timestamp,
-            updatedAt: block.timestamp,
-            allowedFunctions: new string[](0),
-            allowedContracts: new address[](0)
+            updatedAt: block.timestamp
         });
 
         // Educational institution sponsorship
@@ -574,12 +683,9 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
             maxGasLimit: 150000,
             requiresVerification: true,
             verificationLevel: 1,
-            costPerTx: 0,
             isActive: true,
             createdAt: block.timestamp,
-            updatedAt: block.timestamp,
-            allowedFunctions: new string[](0),
-            allowedContracts: new address[](0)
+            updatedAt: block.timestamp
         });
 
         // Premium sponsorship
@@ -592,12 +698,9 @@ contract PaymasterManager is AccessControl, ReentrancyGuard {
             maxGasLimit: 500000,
             requiresVerification: false,
             verificationLevel: 0,
-            costPerTx: 0,
             isActive: true,
             createdAt: block.timestamp,
-            updatedAt: block.timestamp,
-            allowedFunctions: new string[](0),
-            allowedContracts: new address[](0)
+            updatedAt: block.timestamp
         });
     }
 
