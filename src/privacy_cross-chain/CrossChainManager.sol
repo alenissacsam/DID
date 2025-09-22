@@ -5,36 +5,8 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IVerificationLogger.sol";
 import "./interfaces/IChainRegistry.sol";
-
-interface ICertificateManager {
-    function getCertificatesByHolder(
-        address holder
-    ) external view returns (uint256[] memory);
-
-    function verifyCertificate(
-        uint256 certificateId
-    ) external view returns (bool);
-}
-
-interface ILayerZeroEndpoint {
-    function send(
-        uint16 _dstChainId,
-        bytes calldata _destination,
-        bytes calldata _payload,
-        address _refundAddress,
-        address _zroPaymentAddress,
-        bytes calldata _adapterParams
-    ) external payable;
-
-    function receivePayload(
-        uint16 _srcChainId,
-        bytes calldata _srcAddress,
-        address _dstAddress,
-        uint64 _nonce,
-        uint256 _gasLimit,
-        bytes calldata _payload
-    ) external;
-}
+import "../interfaces/ICertificateManager.sol";
+import "../interfaces/ILayerZeroEndpoint.sol";
 
 contract CrossChainManager is AccessControl, ReentrancyGuard {
     // Errors to reduce bytecode size

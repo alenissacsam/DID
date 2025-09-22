@@ -7,4 +7,15 @@ interface IZkProofManager {
 
     // Revoke a previously anchored Merkle root
     function revokeRoot(bytes32 root) external;
+
+    // Generic verification entry point for any registered proof type
+    // Assumes publicSignals[0] is the Merkle root
+    function verifyProof(
+        uint256 typeId,
+        uint256[2] calldata _pA,
+        uint256[2][2] calldata _pB,
+        uint256[2] calldata _pC,
+        uint256[] calldata publicSignals,
+        bytes32 nullifier
+    ) external;
 }

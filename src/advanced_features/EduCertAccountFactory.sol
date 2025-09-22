@@ -123,8 +123,29 @@ contract EduCertAccountFactory is AccessControl {
         // Update mappings
         userAccounts[owner].push(account);
 
-        // Initialize trust score
-        trustScore.initializeUserScore(account, config.initialTrustScore);
+        // Initialize trust score: initialize then add initial delta
+        try trustScore.initializeUser(account) {
+            if (config.initialTrustScore > 0) {
+                try
+                    trustScore.updateScore(
+                        account,
+                        int256(uint256(config.initialTrustScore)),
+                        "Factory init"
+                    )
+                {} catch {}
+            }
+        } catch {
+            // If already initialized, just add initial delta
+            if (config.initialTrustScore > 0) {
+                try
+                    trustScore.updateScore(
+                        account,
+                        int256(uint256(config.initialTrustScore)),
+                        "Factory init"
+                    )
+                {} catch {}
+            }
+        }
 
         emit AccountCreated(
             account,

@@ -10,11 +10,13 @@ interface ITrustScore {
 
     function updateScoreForGaslessTransaction(address user) external;
 
-    function initializeUserScore(address user, uint256 initialScore) external;
-
     function initializeUser(address user) external;
 
-    function updateScore(address user, int256 delta, string memory reason) external;
+    function updateScore(
+        address user,
+        int256 delta,
+        string memory reason
+    ) external;
 
     function unlockScore(address user) external;
 }

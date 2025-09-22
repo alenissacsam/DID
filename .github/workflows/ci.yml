@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Cache Foundry dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.foundry/cache
+            ~/.cache/sccache
+          key: ${{ runner.os }}-foundry-${{ hashFiles('**/foundry.toml') }}
+
+      - name: Build
+        run: forge build -vvv
+
+      - name: Test
+        run: forge test -vv --gas-report
+
+      - name: Upload gas report (optional)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gas-report
+          path: ./gas-report.*

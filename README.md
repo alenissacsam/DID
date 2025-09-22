@@ -205,5 +205,7 @@ For how to generate inputs from encrypted identity bundles and produce proofs, s
 
 Super-detailed wiring and pipeline: `docs/zk_end_to_end_wiring.md`.
 
+Frontend integration (viem/ethers + AA bundler/paymaster): `docs/frontend_integration_guide.md`.
+
 ---
 Maintained with Foundry. Contributions welcome.

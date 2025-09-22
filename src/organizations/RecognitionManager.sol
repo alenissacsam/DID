@@ -6,10 +6,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IVerificationLogger.sol";
 import "../interfaces/ITrustScore.sol";
-
-interface ICertificateManager {
-    function getCertificatesByHolder(address holder) external view returns (uint256[] memory);
-}
+import "../interfaces/ICertificateManager.sol";
 
 contract RecognitionManager is ERC1155, AccessControl, ReentrancyGuard {
     bytes32 public constant BADGE_ADMIN_ROLE = keccak256("BADGE_ADMIN_ROLE");
@@ -72,17 +69,41 @@ contract RecognitionManager is ERC1155, AccessControl, ReentrancyGuard {
     IVerificationLogger public verificationLogger;
     ICertificateManager public certificateManager;
 
-    event BadgeCreated(uint256 indexed badgeId, BadgeType badgeType, BadgeRarity rarity, string name, address creator);
-    event BadgeAwarded(uint256 indexed badgeId, address indexed recipient, string reason);
-    event BadgeRevoked(uint256 indexed badgeId, address indexed user, string reason);
+    event BadgeCreated(
+        uint256 indexed badgeId,
+        BadgeType badgeType,
+        BadgeRarity rarity,
+        string name,
+        address creator
+    );
+    event BadgeAwarded(
+        uint256 indexed badgeId,
+        address indexed recipient,
+        string reason
+    );
+    event BadgeRevoked(
+        uint256 indexed badgeId,
+        address indexed user,
+        string reason
+    );
     event BadgeExpired(uint256 indexed badgeId, address indexed user);
-    event BadgeRenewed(uint256 indexed badgeId, address indexed user, uint256 newExpiryDate);
+    event BadgeRenewed(
+        uint256 indexed badgeId,
+        address indexed user,
+        uint256 newExpiryDate
+    );
     event BadgeUpdated(uint256 indexed badgeId, string field);
-    event AutoBadgeAwarded(uint256 indexed badgeId, address indexed recipient, string trigger);
+    event AutoBadgeAwarded(
+        uint256 indexed badgeId,
+        address indexed recipient,
+        string trigger
+    );
 
-    constructor(address _trustScore, address _verificationLogger, address _certificateManager)
-        ERC1155("https://api.educert.org/badge/{id}.json")
-    {
+    constructor(
+        address _trustScore,
+        address _verificationLogger,
+        address _certificateManager
+    ) ERC1155("https://api.educert.org/badge/{id}.json") {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(BADGE_ADMIN_ROLE, msg.sender);
         _grantRole(MINTER_ROLE, msg.sender);
@@ -135,26 +156,44 @@ contract RecognitionManager is ERC1155, AccessControl, ReentrancyGuard {
         badgesByRarity[rarity].push(badgeId);
 
         verificationLogger.logEvent(
-            "BADGE_CREATED", msg.sender, keccak256(abi.encodePacked(badgeId, name, uint256(badgeType), uint256(rarity)))
+            "BADGE_CREATED",
+            msg.sender,
+            keccak256(
+                abi.encodePacked(
+                    badgeId,
+                    name,
+                    uint256(badgeType),
+                    uint256(rarity)
+                )
+            )
         );
         emit BadgeCreated(badgeId, badgeType, rarity, name, msg.sender);
         return badgeId;
     }
 
-    function awardBadge(uint256 badgeId, address recipient, string memory reason, bytes32 evidenceHash)
-        public
-        onlyRole(MINTER_ROLE)
-        nonReentrant
-    {
+    function awardBadge(
+        uint256 badgeId,
+        address recipient,
+        string memory reason,
+        bytes32 evidenceHash
+    ) public onlyRole(MINTER_ROLE) nonReentrant {
         Badge storage bd = badges[badgeId];
         require(bd.isActive, "Badge not active");
-        require(bd.currentSupply < bd.maxSupply || bd.maxSupply == 0, "Max supply reached");
+        require(
+            bd.currentSupply < bd.maxSupply || bd.maxSupply == 0,
+            "Max supply reached"
+        );
         require(balanceOf(recipient, badgeId) == 0, "Badge already awarded");
 
         uint256 userTrustScore = trustScore.getTrustScore(recipient);
-        require(userTrustScore >= bd.requiredTrustScore, "Insufficient trust score");
+        require(
+            userTrustScore >= bd.requiredTrustScore,
+            "Insufficient trust score"
+        );
 
-        uint256 expiresAt = bd.validityPeriod > 0 ? block.timestamp + bd.validityPeriod : 0;
+        uint256 expiresAt = bd.validityPeriod > 0
+            ? block.timestamp + bd.validityPeriod
+            : 0;
 
         userBadges[recipient][badgeId] = UserBadgeInfo({
             earnedAt: block.timestamp,
@@ -172,12 +211,18 @@ contract RecognitionManager is ERC1155, AccessControl, ReentrancyGuard {
         trustScore.updateScore(recipient, trustScoreReward, "Badge earned");
 
         verificationLogger.logEvent(
-            "BADGE_AWARDED", recipient, keccak256(abi.encodePacked(badgeId, reason, evidenceHash))
+            "BADGE_AWARDED",
+            recipient,
+            keccak256(abi.encodePacked(badgeId, reason, evidenceHash))
         );
         emit BadgeAwarded(badgeId, recipient, reason);
     }
 
-    function revokeBadge(uint256 badgeId, address user, string memory reason) external onlyRole(BADGE_ADMIN_ROLE) {
+    function revokeBadge(
+        uint256 badgeId,
+        address user,
+        string memory reason
+    ) external onlyRole(BADGE_ADMIN_ROLE) {
         require(balanceOf(user, badgeId) > 0, "Badge not owned");
         UserBadgeInfo storage info = userBadges[user][badgeId];
         require(!info.isRevoked, "Badge already revoked");
@@ -190,13 +235,19 @@ contract RecognitionManager is ERC1155, AccessControl, ReentrancyGuard {
         int256 penalty = -_getBadgeTrustScore(badges[badgeId].rarity);
         trustScore.updateScore(user, penalty, "Badge revoked");
 
-        verificationLogger.logEvent("BADGE_REVOKED", user, keccak256(abi.encodePacked(badgeId, reason)));
+        verificationLogger.logEvent(
+            "BADGE_REVOKED",
+            user,
+            keccak256(abi.encodePacked(badgeId, reason))
+        );
         emit BadgeRevoked(badgeId, user, reason);
     }
 
     // ... Additional functions omitted for brevity, but use same field-by-field pattern ...
 
-    function supportsInterface(bytes4 interfaceId) public view override(ERC1155, AccessControl) returns (bool) {
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view override(ERC1155, AccessControl) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
@@ -213,7 +264,9 @@ contract RecognitionManager is ERC1155, AccessControl, ReentrancyGuard {
         }
     }
 
-    function _getBadgeTrustScore(BadgeRarity rarity) private pure returns (int256) {
+    function _getBadgeTrustScore(
+        BadgeRarity rarity
+    ) private pure returns (int256) {
         if (rarity == BadgeRarity.Legendary) return 50;
         if (rarity == BadgeRarity.Epic) return 25;
         if (rarity == BadgeRarity.Rare) return 15;

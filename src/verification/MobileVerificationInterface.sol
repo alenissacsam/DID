@@ -187,13 +187,12 @@ contract MobileVerificationInterface {
 
     /**
      * @dev Get verification statistics for analytics
-     * @param credentialHash Hash of credential to get stats for
      * @return verificationCount Number of times verified
      * @return lastVerified Timestamp of last verification
      */
     function getVerificationStats(
-        bytes32 credentialHash
-    ) external view returns (uint256 verificationCount, uint256 lastVerified) {
+        bytes32 /* credentialHash */
+    ) external pure returns (uint256 verificationCount, uint256 lastVerified) {
         // In a full implementation, this would track verification events
         // For now, return placeholder values
         return (0, 0);
@@ -275,7 +274,7 @@ contract MobileVerificationInterface {
 
     function _formatCredentialInfo(
         OfflineVerificationManager.OfflineCredential memory credential
-    ) internal view returns (string memory) {
+    ) internal pure returns (string memory) {
         string memory issuerName = _getIssuerName(credential.issuer);
         return
             string(
@@ -316,7 +315,7 @@ contract MobileVerificationInterface {
 
     function _getIssuerName(
         address issuer
-    ) internal view returns (string memory) {
+    ) internal pure returns (string memory) {
         // In production, this would lookup issuer names from a registry
         // For now, return a shortened address
         return _getMaskedAddress(issuer);
@@ -338,7 +337,7 @@ contract MobileVerificationInterface {
     }
 
     function _bytesToBase64(
-        bytes memory data
+        bytes memory /* data */
     ) internal pure returns (string memory) {
         // Simplified base64 encoding - in production use a proper library
         return "BASE64_ENCODED_DATA";

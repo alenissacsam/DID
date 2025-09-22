@@ -4,6 +4,7 @@ pragma solidity ^0.8.19;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import "../interfaces/IZkProofManager.sol";
 
 /**
  * @title OfflineVerificationManager
@@ -25,9 +26,10 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
     string private constant SIGNATURE_VERSION = "1";
 
     // EIP-712 TypeHash for offline credentials
-    bytes32 private constant CREDENTIAL_TYPEHASH = keccak256(
-        "OfflineCredential(address holder,string credentialType,bytes32 dataHash,uint256 issuedAt,uint256 expiresAt,uint256 nonce,address issuer)"
-    );
+    bytes32 private constant CREDENTIAL_TYPEHASH =
+        keccak256(
+            "OfflineCredential(address holder,string credentialType,bytes32 dataHash,uint256 issuedAt,uint256 expiresAt,uint256 nonce,address issuer)"
+        );
 
     struct OfflineCredential {
         address holder; // Credential holder address
@@ -60,6 +62,7 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
     mapping(bytes32 => uint256) public merkleRoots; // root => timestamp when added
     mapping(address => bool) public trustedIssuers;
     mapping(string => uint256) public credentialTypeExpiry; // default expiry per type
+    IZkProofManager public zkProofManager;
 
     uint256 public defaultCredentialExpiry = 365 days;
     uint256 public maxOfflineVerificationPeriod = 30 days;
@@ -72,13 +75,29 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
         address indexed issuer
     );
 
-    event CredentialRevoked(bytes32 indexed credentialHash, address indexed revoker, string reason);
-
-    event MerkleRootAdded(
-        bytes32 indexed root, uint256 indexed batchId, address indexed issuer, uint256 credentialCount
+    event CredentialRevoked(
+        bytes32 indexed credentialHash,
+        address indexed revoker,
+        string reason
     );
 
-    event TrustedIssuerUpdated(address indexed issuer, bool trusted, address indexed updater);
+    event MerkleRootAdded(
+        bytes32 indexed root,
+        uint256 indexed batchId,
+        address indexed issuer,
+        uint256 credentialCount
+    );
+
+    event TrustedIssuerUpdated(
+        address indexed issuer,
+        bool trusted,
+        address indexed updater
+    );
+    event OfflineZkProofVerified(
+        address indexed sender,
+        uint256 indexed typeId,
+        bytes32 nullifier
+    );
 
     constructor(address admin) EIP712(SIGNING_DOMAIN, SIGNATURE_VERSION) {
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
@@ -92,6 +111,12 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
         credentialTypeExpiry["IDENTITY"] = 5 * 365 days; // 5 years
     }
 
+    function setZkProofManager(
+        address manager
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        zkProofManager = IZkProofManager(manager);
+    }
+
     /**
      * @dev Issues a signed credential for offline verification
      * @param holder Address of credential holder
@@ -99,7 +124,11 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
      * @param credentialData Raw credential data
      * @return credential The signed offline credential
      */
-    function issueOfflineCredential(address holder, string memory credentialType, bytes memory credentialData)
+    function issueOfflineCredential(
+        address holder,
+        string memory credentialType,
+        bytes memory credentialData
+    )
         external
         onlyRole(ISSUER_ROLE)
         returns (OfflineCredential memory credential)
@@ -110,13 +139,16 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
         require(trustedIssuers[msg.sender], "Issuer not trusted");
 
         bytes32 dataHash = keccak256(credentialData);
-        uint256 nonce = uint256(keccak256(abi.encodePacked(holder, block.timestamp, block.number)));
+        uint256 nonce = uint256(
+            keccak256(abi.encodePacked(holder, block.timestamp, block.number))
+        );
 
         // Ensure nonce is unique for this holder
         require(!usedNonces[holder][nonce], "Nonce already used");
         usedNonces[holder][nonce] = true;
 
-        uint256 expiresAt = block.timestamp + _getCredentialExpiry(credentialType);
+        uint256 expiresAt = block.timestamp +
+            _getCredentialExpiry(credentialType);
 
         credential = OfflineCredential({
             holder: holder,
@@ -146,7 +178,13 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
         bytes32 hash = _hashTypedDataV4(structHash);
         credential.signature = _signHash(hash);
 
-        emit CredentialIssued(holder, credentialType, dataHash, expiresAt, msg.sender);
+        emit CredentialIssued(
+            holder,
+            credentialType,
+            dataHash,
+            expiresAt,
+            msg.sender
+        );
     }
 
     /**
@@ -155,11 +193,9 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
      * @return isValid Whether the credential is valid
      * @return reason Reason if invalid
      */
-    function verifyOfflineCredential(OfflineCredential memory credential)
-        external
-        view
-        returns (bool isValid, string memory reason)
-    {
+    function verifyOfflineCredential(
+        OfflineCredential memory credential
+    ) external view returns (bool isValid, string memory reason) {
         // Check if credential is revoked
         bytes32 credentialHash = _getCredentialHash(credential);
         if (revokedCredentials[credentialHash]) {
@@ -167,7 +203,9 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
         }
 
         // Check expiry
-        if (credential.expiresAt > 0 && block.timestamp > credential.expiresAt) {
+        if (
+            credential.expiresAt > 0 && block.timestamp > credential.expiresAt
+        ) {
             return (false, "Credential expired");
         }
 
@@ -206,11 +244,10 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
      * @param merkleProof Optional merkle proof for batch verification
      * @return package Complete verification package
      */
-    function createVerificationPackage(OfflineCredential memory credential, MerkleProof memory merkleProof)
-        external
-        pure
-        returns (OfflineVerificationPackage memory package)
-    {
+    function createVerificationPackage(
+        OfflineCredential memory credential,
+        MerkleProof memory merkleProof
+    ) external pure returns (OfflineVerificationPackage memory package) {
         package = OfflineVerificationPackage({
             credential: credential,
             merkleProof: merkleProof,
@@ -225,7 +262,11 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
      * @param batchId Batch identifier
      * @param credentialCount Number of credentials in batch
      */
-    function addMerkleRoot(bytes32 root, uint256 batchId, uint256 credentialCount) external onlyRole(ISSUER_ROLE) {
+    function addMerkleRoot(
+        bytes32 root,
+        uint256 batchId,
+        uint256 credentialCount
+    ) external onlyRole(ISSUER_ROLE) {
         require(root != bytes32(0), "Invalid root");
         require(credentialCount > 0, "Invalid credential count");
         require(merkleRoots[root] == 0, "Root already exists");
@@ -241,7 +282,10 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
      * @param proof Merkle proof
      * @return isValid Whether the proof is valid
      */
-    function verifyMerkleProof(bytes32 leaf, MerkleProof memory proof) external view returns (bool isValid) {
+    function verifyMerkleProof(
+        bytes32 leaf,
+        MerkleProof memory proof
+    ) external view returns (bool isValid) {
         if (merkleRoots[proof.root] == 0) {
             return false; // Root not found
         }
@@ -250,9 +294,13 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
         for (uint256 i = 0; i < proof.proof.length; i++) {
             bytes32 proofElement = proof.proof[i];
             if (computedHash <= proofElement) {
-                computedHash = keccak256(abi.encodePacked(computedHash, proofElement));
+                computedHash = keccak256(
+                    abi.encodePacked(computedHash, proofElement)
+                );
             } else {
-                computedHash = keccak256(abi.encodePacked(proofElement, computedHash));
+                computedHash = keccak256(
+                    abi.encodePacked(proofElement, computedHash)
+                );
             }
         }
 
@@ -264,7 +312,10 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
      * @param credentialHash Hash of the credential to revoke
      * @param reason Reason for revocation
      */
-    function revokeCredential(bytes32 credentialHash, string memory reason) external onlyRole(ISSUER_ROLE) {
+    function revokeCredential(
+        bytes32 credentialHash,
+        string memory reason
+    ) external onlyRole(ISSUER_ROLE) {
         revokedCredentials[credentialHash] = true;
         emit CredentialRevoked(credentialHash, msg.sender, reason);
     }
@@ -274,7 +325,10 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
      * @param issuer Address of issuer
      * @param trusted Whether issuer is trusted
      */
-    function updateTrustedIssuer(address issuer, bool trusted) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function updateTrustedIssuer(
+        address issuer,
+        bool trusted
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         trustedIssuers[issuer] = trusted;
         emit TrustedIssuerUpdated(issuer, trusted, msg.sender);
     }
@@ -284,7 +338,9 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
      * @param credential The credential to encode
      * @return qrData Base64 encoded data for QR code
      */
-    function generateQRData(OfflineCredential memory credential) external pure returns (bytes memory qrData) {
+    function generateQRData(
+        OfflineCredential memory credential
+    ) external pure returns (bytes memory qrData) {
         // Encode credential data in a compact format
         qrData = abi.encode(
             credential.holder,
@@ -296,26 +352,52 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
         );
     }
 
-    // Internal functions
-    function _getCredentialHash(OfflineCredential memory credential) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                credential.holder,
-                credential.credentialType,
-                credential.dataHash,
-                credential.issuedAt,
-                credential.nonce,
-                credential.issuer
-            )
+    // Forward a ZK proof to the central manager for verification (reverts on failure)
+    function verifyZkProof(
+        uint256 typeId,
+        uint256[2] calldata _pA,
+        uint256[2][2] calldata _pB,
+        uint256[2] calldata _pC,
+        uint256[] calldata publicSignals,
+        bytes32 nullifier
+    ) external {
+        require(address(zkProofManager) != address(0), "ZK manager not set");
+        zkProofManager.verifyProof(
+            typeId,
+            _pA,
+            _pB,
+            _pC,
+            publicSignals,
+            nullifier
         );
+        emit OfflineZkProofVerified(msg.sender, typeId, nullifier);
     }
 
-    function _getCredentialExpiry(string memory credentialType) internal view returns (uint256) {
+    // Internal functions
+    function _getCredentialHash(
+        OfflineCredential memory credential
+    ) internal pure returns (bytes32) {
+        return
+            keccak256(
+                abi.encode(
+                    credential.holder,
+                    credential.credentialType,
+                    credential.dataHash,
+                    credential.issuedAt,
+                    credential.nonce,
+                    credential.issuer
+                )
+            );
+    }
+
+    function _getCredentialExpiry(
+        string memory credentialType
+    ) internal view returns (uint256) {
         uint256 typeExpiry = credentialTypeExpiry[credentialType];
         return typeExpiry > 0 ? typeExpiry : defaultCredentialExpiry;
     }
 
-    function _signHash(bytes32 hash) internal view returns (bytes memory) {
+    function _signHash(bytes32 hash) internal pure returns (bytes memory) {
         // In a real implementation, this would use a secure signing mechanism
         // For now, we return a placeholder that indicates signing is needed
         return abi.encodePacked("SIGN_REQUIRED:", hash);
@@ -330,7 +412,9 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
         return CREDENTIAL_TYPEHASH;
     }
 
-    function isCredentialRevoked(bytes32 credentialHash) external view returns (bool) {
+    function isCredentialRevoked(
+        bytes32 credentialHash
+    ) external view returns (bool) {
         return revokedCredentials[credentialHash];
     }
 
