@@ -6,7 +6,7 @@ import {VerificationLogger} from "src/core/VerificationLogger.sol";
 import {UserIdentityRegistry} from "src/core/UserIdentityRegistry.sol";
 import {GlobalCredentialAnchor} from "src/privacy_cross-chain/GlobalCredentialAnchor.sol";
 import {ZKProofManager} from "src/verification/ZKProofManager.sol";
-import {EduCertAccountFactory} from "src/advanced_features/EduCertAccountFactory.sol";
+import {IdentityAccountFactory} from "src/advanced_features/IdentityAccountFactory.sol";
 
 import {TrustScore} from "src/advanced_features/TrustScore.sol";
 
@@ -15,7 +15,7 @@ contract EndToEndFlowTest is Test {
     UserIdentityRegistry registry;
     GlobalCredentialAnchor anchor;
     ZKProofManager zkpm;
-    EduCertAccountFactory factory;
+    IdentityAccountFactory factory;
     TrustScore trust;
 
     address manager = address(0xBEEF);
@@ -44,7 +44,7 @@ contract EndToEndFlowTest is Test {
         zkpm.grantRole(zkpm.ROOT_MANAGER_ROLE(), address(this));
         logger.grantRole(logger.LOGGER_ROLE(), address(zkpm));
 
-        factory = new EduCertAccountFactory(
+        factory = new IdentityAccountFactory(
             entryPoint,
             address(logger),
             address(trust),

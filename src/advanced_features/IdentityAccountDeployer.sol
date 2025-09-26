@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "./EduCertModularAccount.sol";
-import {IEduCertAccountDeployer} from "../interfaces/IEduCertAccountDeployer.sol";
+import "./dependencies/IdentityModularAccount.sol";
+import {IIdentityAccountDeployer} from "../interfaces/IIdentityAccountDeployer.sol";
 
-contract EduCertAccountDeployer is IEduCertAccountDeployer {
+contract IdentityAccountDeployer is IIdentityAccountDeployer {
     function deploy(
         address entryPoint,
         address owner,
@@ -12,7 +12,7 @@ contract EduCertAccountDeployer is IEduCertAccountDeployer {
         bytes32 salt
     ) external returns (address account) {
         account = address(
-            new EduCertModularAccount{salt: salt}(
+            new IdentityModularAccount{salt: salt}(
                 entryPoint,
                 owner,
                 verificationLogger

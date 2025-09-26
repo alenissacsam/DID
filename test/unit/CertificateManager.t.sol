@@ -51,15 +51,15 @@ contract CertificateManagerTest is Test {
         cert.grantRole(cert.ISSUER_ROLE(), address(this));
 
         // Issue
-        uint256 certId = cert.issueCertificate({
-            holder: alice,
-            certificateType: "DEMO",
-            metadataUri: "ipfs://demo",
-            validityPeriod: 365 days,
-            zkProofHash: keccak256("zk"),
-            identityCommitment: keccak256("id"),
-            requiredTrustScore: 0
-        });
+        uint256 certId = cert.issueCertificate(
+            alice,
+            "DEMO",
+            "ipfs://demo",
+            365 days,
+            keccak256("zk"),
+            bytes32("unused"),
+            0
+        );
 
         assertGt(certId, 0, "certId should be > 0");
         assertEq(cert.ownerOf(certId), alice, "owner should be Alice");

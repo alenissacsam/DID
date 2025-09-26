@@ -5,15 +5,15 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import "../interfaces/IEntryPoint.sol";
-import "../interfaces/IVerificationLogger.sol";
+import "../../interfaces/IEntryPoint.sol";
+import "../../interfaces/IVerificationLogger.sol";
 
 /**
- * @title EduCertModularAccount
+ * @title IdentityModularAccount
  * @notice Modular smart account with session keys for privacy and dApp-specific interactions
  * @dev Supports ERC-4337, session keys, subscriptions, and privacy-preserving dApp interactions
  */
-contract EduCertModularAccount is AccessControl, ReentrancyGuard {
+contract IdentityModularAccount is AccessControl, ReentrancyGuard {
     using ECDSA for bytes32;
     using MessageHashUtils for bytes32;
 
@@ -77,16 +77,31 @@ contract EduCertModularAccount is AccessControl, ReentrancyGuard {
     string[] public dAppDomainsList;
 
     // Events
-    event SessionKeyAdded(address indexed sessionKey, string indexed dAppDomain, uint256 validUntil, uint256 gasLimit);
+    event SessionKeyAdded(
+        address indexed sessionKey,
+        string indexed dAppDomain,
+        uint256 validUntil,
+        uint256 gasLimit
+    );
     event SessionKeyUsed(
-        address indexed sessionKey, string indexed dAppDomain, uint256 gasUsed, bytes4 functionSelector
+        address indexed sessionKey,
+        string indexed dAppDomain,
+        uint256 gasUsed,
+        bytes4 functionSelector
     );
     event SessionKeyRevoked(address indexed sessionKey, string reason);
 
     event SubscriptionCreated(
-        bytes32 indexed subscriptionId, address indexed provider, uint256 amount, uint256 interval
+        bytes32 indexed subscriptionId,
+        address indexed provider,
+        uint256 amount,
+        uint256 interval
     );
-    event SubscriptionPayment(bytes32 indexed subscriptionId, uint256 amount, uint256 timestamp);
+    event SubscriptionPayment(
+        bytes32 indexed subscriptionId,
+        uint256 amount,
+        uint256 timestamp
+    );
     event SubscriptionCanceled(bytes32 indexed subscriptionId, string reason);
 
     event DAppProfileCreated(string indexed domain, address sessionKey);
@@ -98,15 +113,28 @@ contract EduCertModularAccount is AccessControl, ReentrancyGuard {
 
         SessionKey storage sessionKey = sessionKeys[profile.sessionKey];
         require(sessionKey.isActive, "Session key not active");
-        require(block.timestamp <= sessionKey.validUntil, "Session key expired");
-        require(keccak256(abi.encodePacked(dAppDomain)) == sessionKey.dAppHash, "Domain mismatch");
+        require(
+            block.timestamp <= sessionKey.validUntil,
+            "Session key expired"
+        );
+        require(
+            keccak256(abi.encodePacked(dAppDomain)) == sessionKey.dAppHash,
+            "Domain mismatch"
+        );
         _;
     }
 
-    constructor(address _entryPoint, address _masterOwner, address _verificationLogger) {
+    constructor(
+        address _entryPoint,
+        address _masterOwner,
+        address _verificationLogger
+    ) {
         require(_entryPoint != address(0), "Invalid EntryPoint");
         require(_masterOwner != address(0), "Invalid master owner");
-        require(_verificationLogger != address(0), "Invalid verification logger");
+        require(
+            _verificationLogger != address(0),
+            "Invalid verification logger"
+        );
 
         entryPoint = _entryPoint;
         masterOwner = _masterOwner;
@@ -131,7 +159,13 @@ contract EduCertModularAccount is AccessControl, ReentrancyGuard {
 
         // Generate deterministic session key address
         bytes32 salt = keccak256(abi.encodePacked(dAppDomain, block.timestamp));
-        sessionKeyAddress = address(uint160(uint256(keccak256(abi.encodePacked(address(this), salt, dAppDomain)))));
+        sessionKeyAddress = address(
+            uint160(
+                uint256(
+                    keccak256(abi.encodePacked(address(this), salt, dAppDomain))
+                )
+            )
+        );
 
         // Create session key
         SessionKey storage sessionKey = sessionKeys[sessionKeyAddress];
@@ -147,7 +181,9 @@ contract EduCertModularAccount is AccessControl, ReentrancyGuard {
 
         // Create dApp profile
         DAppProfile storage profile = dAppProfiles[dAppDomain];
-        profile.profileHash = keccak256(abi.encodePacked(dAppDomain, sessionKeyAddress));
+        profile.profileHash = keccak256(
+            abi.encodePacked(dAppDomain, sessionKeyAddress)
+        );
         profile.sessionKey = sessionKeyAddress;
         profile.privacyMode = privacyMode;
 
@@ -160,10 +196,17 @@ contract EduCertModularAccount is AccessControl, ReentrancyGuard {
 
         // Log event
         verificationLogger.logEvent(
-            "SESSION_KEY_CREATED", address(this), keccak256(abi.encodePacked(dAppDomain, sessionKeyAddress))
+            "SESSION_KEY_CREATED",
+            address(this),
+            keccak256(abi.encodePacked(dAppDomain, sessionKeyAddress))
         );
 
-        emit SessionKeyAdded(sessionKeyAddress, dAppDomain, sessionKey.validUntil, gasLimit);
+        emit SessionKeyAdded(
+            sessionKeyAddress,
+            dAppDomain,
+            sessionKey.validUntil,
+            gasLimit
+        );
         emit DAppProfileCreated(dAppDomain, sessionKeyAddress);
 
         return sessionKeyAddress;
@@ -178,44 +221,64 @@ contract EduCertModularAccount is AccessControl, ReentrancyGuard {
         uint256 value,
         bytes memory data,
         bytes memory signature
-    ) external nonReentrant onlyValidSessionKey(dAppDomain) returns (bytes memory result) {
+    )
+        external
+        nonReentrant
+        onlyValidSessionKey(dAppDomain)
+        returns (bytes memory result)
+    {
+        // Load once to reduce stack vars
         DAppProfile storage profile = dAppProfiles[dAppDomain];
         SessionKey storage sessionKey = sessionKeys[profile.sessionKey];
 
-        // Verify signature
+        _verifySessionKeySig(sessionKey.keyAddress, to, value, data, signature);
+        _checkSessionKeyLimits(sessionKey, value, data);
+        _updateSessionKeyUsage(sessionKey, value);
+        nonce++;
+
+        result = _performSessionCall(to, value, data);
+        profile.interactionCount++;
+
+        _emitSessionUsage(sessionKey.keyAddress, dAppDomain, to, value, data);
+        return result;
+    }
+
+    function _verifySessionKeySig(
+        address expected,
+        address to,
+        uint256 value,
+        bytes memory data,
+        bytes memory signature
+    ) internal view {
         bytes32 hash = keccak256(abi.encodePacked(to, value, data, nonce));
         bytes32 ethSignedHash = hash.toEthSignedMessageHash();
         address recovered = ethSignedHash.recover(signature);
-        require(recovered == sessionKey.keyAddress, "Invalid signature");
+        require(recovered == expected, "Invalid signature");
+    }
 
-        // Check limits
-        _checkSessionKeyLimits(sessionKey, value, data);
-
-        // Update usage
-        _updateSessionKeyUsage(sessionKey, value);
-
-        // Increment nonce
-        nonce++;
-
-        // Execute transaction
-        bool success;
-        (success, result) = to.call{value: value}(data);
+    function _performSessionCall(
+        address to,
+        uint256 value,
+        bytes memory data
+    ) internal returns (bytes memory result) {
+        (bool success, bytes memory ret) = to.call{value: value}(data);
         require(success, "Transaction failed");
+        return ret;
+    }
 
-        // Update profile
-        profile.interactionCount++;
-
-        // Extract function selector
-        bytes4 functionSelector = bytes4(data);
-
-        // Log usage
+    function _emitSessionUsage(
+        address keyAddress,
+        string memory dAppDomain,
+        address to,
+        uint256 value,
+        bytes memory data
+    ) internal {
         verificationLogger.logEvent(
-            "SESSION_KEY_USED", address(this), keccak256(abi.encodePacked(dAppDomain, to, value))
+            "SESSION_KEY_USED",
+            address(this),
+            keccak256(abi.encodePacked(dAppDomain, to, value))
         );
-
-        emit SessionKeyUsed(sessionKey.keyAddress, dAppDomain, gasleft(), functionSelector);
-
-        return result;
+        emit SessionKeyUsed(keyAddress, dAppDomain, gasleft(), bytes4(data));
     }
 
     /**
@@ -232,7 +295,9 @@ contract EduCertModularAccount is AccessControl, ReentrancyGuard {
         require(amount > 0, "Invalid amount");
         require(interval > 0, "Invalid interval");
 
-        subscriptionId = keccak256(abi.encodePacked(provider, serviceName, block.timestamp, nonce));
+        subscriptionId = keccak256(
+            abi.encodePacked(provider, serviceName, block.timestamp, nonce)
+        );
 
         Subscription storage subscription = subscriptions[subscriptionId];
         subscription.provider = provider;
@@ -255,14 +320,24 @@ contract EduCertModularAccount is AccessControl, ReentrancyGuard {
     /**
      * @dev Execute subscription payment
      */
-    function executeSubscriptionPayment(bytes32 subscriptionId) external nonReentrant returns (bool success) {
+    function executeSubscriptionPayment(
+        bytes32 subscriptionId
+    ) external nonReentrant returns (bool success) {
         Subscription storage subscription = subscriptions[subscriptionId];
         require(subscription.isActive, "Subscription not active");
-        require(block.timestamp >= subscription.nextPayment, "Payment not due yet");
-        require(address(this).balance >= subscription.amount, "Insufficient balance");
+        require(
+            block.timestamp >= subscription.nextPayment,
+            "Payment not due yet"
+        );
+        require(
+            address(this).balance >= subscription.amount,
+            "Insufficient balance"
+        );
 
         // Execute payment
-        (success,) = subscription.provider.call{value: subscription.amount}("");
+        (success, ) = subscription.provider.call{value: subscription.amount}(
+            ""
+        );
         require(success, "Payment failed");
 
         // Update subscription
@@ -271,18 +346,29 @@ contract EduCertModularAccount is AccessControl, ReentrancyGuard {
         subscription.totalPaid += subscription.amount;
         subscription.paymentsCount++;
 
-        emit SubscriptionPayment(subscriptionId, subscription.amount, block.timestamp);
+        emit SubscriptionPayment(
+            subscriptionId,
+            subscription.amount,
+            block.timestamp
+        );
 
         return true;
     }
 
-    function _checkSessionKeyLimits(SessionKey storage sessionKey, uint256 value, bytes memory data) internal view {
+    function _checkSessionKeyLimits(
+        SessionKey storage sessionKey,
+        uint256 value,
+        bytes memory data
+    ) internal view {
         // Check function is allowed
         if (sessionKey.allowedFunctions.length > 0) {
             bytes4 selector = bytes4(data);
             bool isAllowed = false;
             for (uint256 i = 0; i < sessionKey.allowedFunctions.length; i++) {
-                if (keccak256(bytes(sessionKey.allowedFunctions[i])) == keccak256(abi.encodePacked(selector))) {
+                if (
+                    keccak256(bytes(sessionKey.allowedFunctions[i])) ==
+                    keccak256(abi.encodePacked(selector))
+                ) {
                     isAllowed = true;
                     break;
                 }
@@ -292,12 +378,20 @@ contract EduCertModularAccount is AccessControl, ReentrancyGuard {
 
         // Check daily limit
         uint256 currentDay = block.timestamp / 1 days;
-        uint256 dailyUsed = (sessionKey.lastResetDay == currentDay) ? sessionKey.dailyUsed : 0;
+        uint256 dailyUsed = (sessionKey.lastResetDay == currentDay)
+            ? sessionKey.dailyUsed
+            : 0;
 
-        require(dailyUsed + value <= sessionKey.dailyLimit, "Daily limit exceeded");
+        require(
+            dailyUsed + value <= sessionKey.dailyLimit,
+            "Daily limit exceeded"
+        );
     }
 
-    function _updateSessionKeyUsage(SessionKey storage sessionKey, uint256 value) internal {
+    function _updateSessionKeyUsage(
+        SessionKey storage sessionKey,
+        uint256 value
+    ) internal {
         uint256 currentDay = block.timestamp / 1 days;
 
         // Reset daily usage if new day
@@ -311,7 +405,9 @@ contract EduCertModularAccount is AccessControl, ReentrancyGuard {
     }
 
     // View functions
-    function getSessionKeyInfo(address sessionKeyAddress)
+    function getSessionKeyInfo(
+        address sessionKeyAddress
+    )
         external
         view
         returns (
@@ -336,16 +432,30 @@ contract EduCertModularAccount is AccessControl, ReentrancyGuard {
         );
     }
 
-    function getDAppProfile(string memory domain)
+    function getDAppProfile(
+        string memory domain
+    )
         external
         view
-        returns (bytes32 profileHash, address sessionKey, uint256 interactionCount, bool privacyMode)
+        returns (
+            bytes32 profileHash,
+            address sessionKey,
+            uint256 interactionCount,
+            bool privacyMode
+        )
     {
         DAppProfile storage profile = dAppProfiles[domain];
-        return (profile.profileHash, profile.sessionKey, profile.interactionCount, profile.privacyMode);
+        return (
+            profile.profileHash,
+            profile.sessionKey,
+            profile.interactionCount,
+            profile.privacyMode
+        );
     }
 
-    function getSubscriptionInfo(bytes32 subscriptionId)
+    function getSubscriptionInfo(
+        bytes32 subscriptionId
+    )
         external
         view
         returns (
@@ -373,30 +483,40 @@ contract EduCertModularAccount is AccessControl, ReentrancyGuard {
     }
 
     // Admin functions
-    function revokeSessionKey(address sessionKeyAddress, string memory reason) external onlyRole(OWNER_ROLE) {
+    function revokeSessionKey(
+        address sessionKeyAddress,
+        string memory reason
+    ) external onlyRole(OWNER_ROLE) {
         sessionKeys[sessionKeyAddress].isActive = false;
         _revokeRole(SESSION_KEY_ROLE, sessionKeyAddress);
 
         emit SessionKeyRevoked(sessionKeyAddress, reason);
     }
 
-    function cancelSubscription(bytes32 subscriptionId, string memory reason) external onlyRole(OWNER_ROLE) {
+    function cancelSubscription(
+        bytes32 subscriptionId,
+        string memory reason
+    ) external onlyRole(OWNER_ROLE) {
         subscriptions[subscriptionId].isActive = false;
 
         emit SubscriptionCanceled(subscriptionId, reason);
     }
 
-    function togglePrivacyMode(string memory domain, bool enabled) external onlyRole(OWNER_ROLE) {
+    function togglePrivacyMode(
+        string memory domain,
+        bool enabled
+    ) external onlyRole(OWNER_ROLE) {
         dAppProfiles[domain].privacyMode = enabled;
 
         emit PrivacyModeToggled(domain, enabled);
     }
 
     // ERC-4337 compatibility
-    function validateUserOp(IEntryPoint.UserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
-        external
-        returns (uint256 validationData)
-    {
+    function validateUserOp(
+        IEntryPoint.UserOperation calldata userOp,
+        bytes32 userOpHash,
+        uint256 missingAccountFunds
+    ) external returns (uint256 validationData) {
         // Only entry point can call this
         require(msg.sender == entryPoint, "Only EntryPoint");
 
@@ -407,7 +527,9 @@ contract EduCertModularAccount is AccessControl, ReentrancyGuard {
         if (recovered == masterOwner || hasRole(SESSION_KEY_ROLE, recovered)) {
             // Pay prefund if needed
             if (missingAccountFunds > 0) {
-                (bool success,) = payable(msg.sender).call{value: missingAccountFunds}("");
+                (bool success, ) = payable(msg.sender).call{
+                    value: missingAccountFunds
+                }("");
                 require(success, "Failed to pay prefund");
             }
             return 0; // Valid

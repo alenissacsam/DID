@@ -10,7 +10,6 @@ import {IncomeVerificationManager} from "../../src/verification/IncomeVerificati
 import {OfflineVerificationManager} from "../../src/verification/OfflineVerificationManager.sol";
 import {MobileVerificationInterface} from "../../src/verification/MobileVerificationInterface.sol";
 import {CertificateManager} from "../../src/organizations/CertificateManager.sol";
-import {RecognitionManager} from "../../src/organizations/RecognitionManager.sol";
 import {GuardianManager} from "../../src/advanced_features/GuardianManager.sol";
 import {GlobalCredentialAnchor} from "../../src/privacy_cross-chain/GlobalCredentialAnchor.sol";
 import {ZkKeyRegistry} from "../../src/privacy_cross-chain/ZkKeyRegistry.sol";
@@ -75,9 +74,8 @@ library DeployLib {
         address logger,
         address registry,
         address trust
-    ) internal returns (CertificateManager cert, RecognitionManager recog) {
+    ) internal returns (CertificateManager cert) {
         cert = new CertificateManager(logger, registry, trust);
-        recog = new RecognitionManager(trust, logger, address(cert));
     }
 
     function deployGuardianAnchor(

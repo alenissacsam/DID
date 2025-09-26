@@ -177,7 +177,11 @@ contract FaceVerificationManager is AccessControl, ReentrancyGuard {
     }
 
     function isFaceVerified(address user) external view returns (bool) {
-        return faceVerifications[user].isVerified && faceVerifications[user].isActive;
+        // A user is considered face-verified if the last verification succeeded and has not been revoked.
+        // The internal isActive flag tracks an in-flight request; after completion we set isActive=false
+        // but the verification should still be treated as valid until explicitly revoked.
+        FaceVerification memory v = faceVerifications[user];
+        return v.isVerified; // ignore isActive here to reflect post-completion validity
     }
 
     function getFaceVerificationInfo(address user)

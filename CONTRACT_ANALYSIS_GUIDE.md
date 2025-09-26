@@ -1,6 +1,6 @@
-# EduCert Smart Contract Analysis Guide
+# Identity Smart Contract Analysis Guide
 
-This document provides a comprehensive roadmap for analyzing the EduCert smart contract ecosystem. Follow this order to build understanding from foundational contracts to complex features.
+This document provides a comprehensive roadmap for analyzing the Identity smart contract ecosystem. Follow this order to build understanding from foundational contracts to complex features.
 
 ## 📋 Analysis Methodology
 
@@ -194,7 +194,7 @@ These contracts provide advanced functionality like AA wallets, gas management, 
 - **Dependencies**: VerificationLogger, TrustScore
 - **Integration**: Works with AAWalletManager for gasless UX; SystemToken dependency removed
 
-### 22. `src/advanced_features/EduCertEntryPoint.sol`
+### 22. `src/advanced_features/IdentityEntryPoint.sol`
 **Priority: HIGH** ⭐⭐⭐⭐
 - **Purpose**: Custom EntryPoint for ERC-4337 with trust integration
 - **Analysis Focus**: UserOp execution, trust-based policies, gas management
@@ -210,7 +210,7 @@ These contracts provide advanced functionality like AA wallets, gas management, 
 - **Dependencies**: TrustScore, VerificationLogger
 - **Special**: Third-party service integration
 
-### 24. `src/advanced_features/EduCertModularAccount.sol`
+### 24. `src/advanced_features/IdentityModularAccount.sol`
 **Priority: MEDIUM** ⭐⭐⭐
 - **Purpose**: Modular smart contract account implementation
 - **Analysis Focus**: Account modularity, plugin system, upgrades
@@ -218,9 +218,9 @@ These contracts provide advanced functionality like AA wallets, gas management, 
 - **Dependencies**: VerificationLogger
 - **Special**: Supports modular account architecture
 
-### 25. `src/advanced_features/EduCertAccountFactory.sol`
+### 25. `src/advanced_features/IdentityAccountFactory.sol`
 **Priority: MEDIUM** ⭐⭐⭐
-- **Purpose**: Factory for creating EduCert smart accounts
+- **Purpose**: Factory for creating Identity smart accounts
 - **Analysis Focus**: Deterministic deployment, initialization
 - **Key Functions**: `createAccount()`, `getAddress()`, `initializeAccount()`
 - **Dependencies**: VerificationLogger, TrustScore, AlchemyGasManager

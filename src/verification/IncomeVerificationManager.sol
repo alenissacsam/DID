@@ -8,7 +8,7 @@ import "../interfaces/IUserIdentityRegistry.sol";
 import "../interfaces/ITrustScore.sol";
 import "../interfaces/IAadhaarVerificationManager.sol";
 import "../interfaces/IZkProofManager.sol";
-import "./ZkTypes.sol";
+import "./dependencies/ZkTypes.sol";
 
 contract IncomeVerificationManager is AccessControl, ReentrancyGuard {
     bytes32 public constant VERIFIER_ROLE = keccak256("VERIFIER_ROLE");

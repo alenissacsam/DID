@@ -6,11 +6,11 @@ This repo uses Foundry for builds/tests and OpenZeppelin libraries for security 
 
 ## ✨ Highlights
 - Modular identity and verification managers (Aadhaar, Income, Face, Mobile, Offline)
-- Organization-managed credentials: ERC721 certificates and ERC1155 recognitions
+- Organization-issued ERC721 certificates (badges/recognitions system removed to streamline scope)
 - Cross-chain privacy primitives: Global Credential Anchor and CrossChainManager
-- Account abstraction support (ERC-4337) with gas sponsorship tooling
-- Transparent audit trail across the system via VerificationLogger
-- Dispute Resolution module (kept) — GovernanceManager and SystemToken removed
+- Account abstraction (ERC-4337) modular smart account with pluggable modules (session keys, subscriptions)
+- Transparent audit trail via `VerificationLogger` + standardized events & custom errors
+- Dispute Resolution module retained (tokenless) — GovernanceManager & SystemToken removed
 
 ## Architecture Overview
 
@@ -22,8 +22,7 @@ Core building blocks:
 - Verification
   - `AadhaarVerificationManager`, `IncomeVerificationManager`, `FaceVerificationManager`, `OfflineVerificationManager`, `MobileVerificationInterface`
 - Organizations
-  - `CertificateManager` (ERC721) — issue/ revoke certificates
-  - `RecognitionManager` (ERC1155) — badges/recognitions
+  - `CertificateManager` (ERC721) — issue / revoke certificates (configurable trust score rewards)
   - `OrganizationRegistryProxy` + `OrganizationLogic` + `OrganizationView`
 - Privacy & Cross-Chain
   - `GlobalCredentialAnchor` — anchor/merkle roots for credentials
@@ -31,8 +30,9 @@ Core building blocks:
   - `PrivacyManager` — privacy controls and access policy helpers
 - Advanced Features
   - `AlchemyGasManager` — gas sponsorship via third-party paymasters
-  - `EduCertEntryPoint`, `EduCertModularAccount`, `EduCertAccountFactory` — ERC-4337 account abstraction components
+  - `IdentityEntryPoint`, `IdentityModularAccount`, `IdentityAccountFactory` — ERC-4337 account abstraction components
   - `MigrationManager`, `TrustScore`, `PaymasterManager` (updated to not require SystemToken)
+  - Modular Account Modules (new): `SessionKeyModule`, `SubscriptionModule` (see "Modular Account Architecture" below)
 - Governance
   - `DisputeResolution` — dispute lifecycle, arbitration, and execution
   - Removed: `GovernanceManager` and `SystemToken` (and `ISystemToken` interface)
@@ -40,11 +40,20 @@ Core building blocks:
 Interfaces live under `src/interfaces/` and are imported per-contract (we replaced the monolithic `SharedInterfaces.sol`). Key interfaces: `IVerificationLogger`, `ITrustScore`, `IUserIdentityRegistry`, `IGuardianManager`, `IEntryPoint`, etc.
 
 ## Recent Changes
-- Fully decoupled interfaces (removed `SharedInterfaces.sol`) and added specific interface files
-- Removed economic tokenization: deleted `SystemToken.sol` and `ISystemToken.sol`
-- Removed governance coordinator: deleted `GovernanceManager.sol`
-- Updated `DisputeResolution.sol` to work without a token bond; the module is preserved
-- Updated `PaymasterManager.sol` to remove token dependency and related purchase flow
+Refactor wave (September 2025):
+- Session Key overhaul: external EOA signer required, bytes4 selector allowlist (removed string list + gasLimit field), domain overwrite logic, custom errors.
+- Subscription module enhanced: failure no longer reverts (returns bool), grace period + overdue tracking, auto-cancel after grace, events `SubscriptionPaymentFailed`, `SubscriptionOverdue`, `SubscriptionCanceled`.
+- Account locking: `lockAccount` / `unlockAccount` gates module creation & execution; emits `AccountLocked` / `AccountUnlocked`.
+- Recognition / badge system removed (`RecognitionManager` deleted) to reduce surface area.
+- Certificate rewards configurable: `issueReward` / `revokePenalty` with governance setter + event.
+- Custom errors adopted across new & refactored contracts for gas savings and clearer failure reasons.
+- Documentation & README updated to reflect modular architecture changes.
+- Cleaned deployment & interaction scripts to remove recognition references.
+Earlier structural changes:
+- Fully decoupled interfaces (removed `SharedInterfaces.sol`).
+- Removed economic tokenization (deleted `SystemToken.sol`, `ISystemToken.sol`).
+- Removed `GovernanceManager`; dispute resolution retained and tokenless.
+- Updated `PaymasterManager.sol` to remove token dependency.
 
 ## Getting Started
 
@@ -134,15 +143,15 @@ Usage examples (env: RPC_URL, PRIVATE_KEY):
   - `OfflineVerificationManager` — off-chain signed attestations (EIP-712)
   - `MobileVerificationInterface` — mobile number verification helpers
 - Organizations
-  - `CertificateManager` — ERC721 credentials
-  - `RecognitionManager` — ERC1155 recognitions/badges
+  - `CertificateManager` — ERC721 credentials (configurable trust score deltas)
   - `OrganizationRegistryProxy` + `OrganizationLogic` + `OrganizationView`
 - Privacy & Cross Chain
   - `GlobalCredentialAnchor`, `CrossChainManager`, `PrivacyManager`
   - `ZKProofManager` — manage Groth16 proof types and anchored Merkle roots
 - Account Abstraction + Gas
-  - `EduCertEntryPoint`, `EduCertModularAccount`, `EduCertAccountFactory`
+  - `IdentityEntryPoint`, `IdentityModularAccount`, `IdentityAccountFactory`
   - `AlchemyGasManager`, `PaymasterManager`
+  - Modules: `SessionKeyModule` (external signer, selector allowlist, daily value limits), `SubscriptionModule` (recurring payments w/ grace + auto-cancel) — extensible registry
 - Governance
   - `DisputeResolution` (tokenless bond post-change)
 
@@ -151,6 +160,31 @@ Usage examples (env: RPC_URL, PRIVATE_KEY):
 forge test -vvv
 ```
 Add unit tests under `test/` following Foundry conventions. Use `forge-std` utilities for assertions, cheats, and fuzzing.
+
+### Modular Account Tests
+Representative tests:
+- `SessionKeyModule.t.sol` — creation + selector-scoped call path
+- `SubscriptionModule.t.sol` — success path, failure -> grace, grace -> auto-cancel, recovery after failure
+- `IdentityModularAccountLock.t.sol` — lock/unlock gating
+- `CertificateManagerConfig.t.sol` — configurable reward & penalty paths
+
+### Subscription Failure Semantics
+`executePayment(id)` returns `true` on success, `false` on payment failure OR auto-cancel (after grace expiry). It never reverts for ordinary payment failures so state (grace window, failedAttempts) persists. Only validation errors (non-existent / inactive / not due) revert via custom errors.
+
+### Error Strategy & Events
+- Custom errors: e.g., `ErrorAccountLocked`, `ErrorNotDue(nextPayment, nowTs)`, `ErrorSubInactive` reduce gas vs revert strings.
+- Event taxonomy: account (`AccountLocked/Unlocked`), session keys (`SessionKeyReplaced`, etc.), subscriptions (`SubscriptionCreated`, `SubscriptionPaymentFailed`, `SubscriptionOverdue`, `SubscriptionCanceled`, `SubscriptionPayment`).
+
+### Account Locking
+When locked, actions that create or execute module operations revert. Unlock restores normal behavior; read paths unaffected.
+
+End-to-end and fuzz suites remain unchanged and ensure no regression after modularization.
+
+### Quick Summary of Current Coverage
+- Core identity + verification managers: unit + fuzz
+- Modular account: basic positive paths; planned enhancements include signature realism for session keys and multi-cycle subscription simulations.
+
+For deep design notes see `docs/modular_account_architecture.md`.
 
 ## Security Notes
 - Uses OpenZeppelin access control and standards
@@ -206,6 +240,8 @@ For how to generate inputs from encrypted identity bundles and produce proofs, s
 Super-detailed wiring and pipeline: `docs/zk_end_to_end_wiring.md`.
 
 Frontend integration (viem/ethers + AA bundler/paymaster): `docs/frontend_integration_guide.md`.
+
+Modular smart account design: `docs/modular_account_architecture.md`.
 
 ---
 Maintained with Foundry. Contributions welcome.

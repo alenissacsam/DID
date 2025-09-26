@@ -4,7 +4,7 @@ pragma solidity ^0.8.19;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IVerificationLogger.sol";
-import {IZkKeyRegistry} from "./interfaces/IZkKeyRegistry.sol";
+import {IZkKeyRegistry} from "../interfaces/IZkKeyRegistry.sol";
 import {IZkProofManager} from "../interfaces/IZkProofManager.sol";
 import {MerkleLib} from "../libs/MerkleLib.sol";
 import {ZkVerifyLib} from "../libs/ZkVerifyLib.sol";

@@ -7,7 +7,6 @@ import {VerificationLogger} from "../../src/core/VerificationLogger.sol";
 import {TrustScore} from "../../src/advanced_features/TrustScore.sol";
 import {UserIdentityRegistry} from "../../src/core/UserIdentityRegistry.sol";
 import {CertificateManager} from "../../src/organizations/CertificateManager.sol";
-import {RecognitionManager} from "../../src/organizations/RecognitionManager.sol";
 
 contract AutoWireRoles is Script {
     function run() external {
@@ -44,10 +43,6 @@ contract AutoWireRoles is Script {
             "CertificateManager",
             block.chainid
         );
-        address recogAddr = DevOpsTools.get_most_recent_deployment(
-            "RecognitionManager",
-            block.chainid
-        );
 
         if (certAddr != address(0)) {
             CertificateManager(certAddr).grantRole(
@@ -56,19 +51,7 @@ contract AutoWireRoles is Script {
             );
             console.log("Granted ISSUER_ROLE on CertificateManager to admin");
         }
-        if (recogAddr != address(0)) {
-            RecognitionManager(recogAddr).grantRole(
-                keccak256("BADGE_ADMIN_ROLE"),
-                admin
-            );
-            RecognitionManager(recogAddr).grantRole(
-                keccak256("MINTER_ROLE"),
-                admin
-            );
-            console.log(
-                "Granted BADGE_ADMIN_ROLE & MINTER_ROLE on RecognitionManager to admin"
-            );
-        }
+        // Recognition system removed; no badge roles to wire.
 
         vm.stopBroadcast();
     }

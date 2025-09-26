@@ -36,19 +36,37 @@ contract CertificateManager is ERC721, AccessControl, ReentrancyGuard {
     IUserIdentityRegistry public userRegistry;
     ITrustScore public trustScore;
 
-    uint256 public constant MIN_TRUST_SCORE_FOR_CERTIFICATE = 75;
+    uint256 public constant MIN_TRUST_SCORE_FOR_CERTIFICATE = 75; // baseline gate
+    int256 public issueReward = 15; // configurable trust score delta on issue
+    int256 public revokePenalty = -10; // configurable trust score delta on revoke
+
+    // Events for configuration changes
+    event TrustScoreRewardsUpdated(int256 issueReward, int256 revokePenalty);
 
     event CertificateIssued(
-        uint256 indexed certificateId, address indexed holder, address indexed issuer, string certificateType
+        uint256 indexed certificateId,
+        address indexed holder,
+        address indexed issuer,
+        string certificateType
     );
-    event CertificateRevoked(uint256 indexed certificateId, address indexed revoker, string reason);
-    event CertificateMigrated(uint256 indexed certificateId, address indexed oldHolder, address indexed newHolder);
+    event CertificateRevoked(
+        uint256 indexed certificateId,
+        address indexed revoker,
+        string reason
+    );
+    event CertificateMigrated(
+        uint256 indexed certificateId,
+        address indexed oldHolder,
+        address indexed newHolder
+    );
     event AccountLocked(address indexed account, string reason);
     event AccountUnlocked(address indexed account);
 
-    constructor(address _verificationLogger, address _userRegistry, address _trustScore)
-        ERC721("Educational Certificates", "EDUCERT")
-    {
+    constructor(
+        address _verificationLogger,
+        address _userRegistry,
+        address _trustScore
+    ) ERC721("Educational Certificates", "IDENTITY") {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(ADMIN_ROLE, msg.sender);
 
@@ -63,7 +81,7 @@ contract CertificateManager is ERC721, AccessControl, ReentrancyGuard {
         string memory metadataUri,
         uint256 validityPeriod,
         bytes32 zkProofHash,
-        bytes32 identityCommitment,
+        bytes32 /* identityCommitment */,
         uint256 requiredTrustScore
     ) external onlyRole(ISSUER_ROLE) nonReentrant returns (uint256) {
         require(holder != address(0), "Invalid holder address");
@@ -73,10 +91,19 @@ contract CertificateManager is ERC721, AccessControl, ReentrancyGuard {
         require(!lockedAccounts[holder], "Account is locked");
 
         uint256 holderTrustScore = trustScore.getTrustScore(holder);
-        require(holderTrustScore >= MIN_TRUST_SCORE_FOR_CERTIFICATE, "Insufficient trust score for certificate");
-        require(holderTrustScore >= requiredTrustScore, "Insufficient trust score for this certificate type");
+        require(
+            holderTrustScore >= MIN_TRUST_SCORE_FOR_CERTIFICATE,
+            "Insufficient trust score for certificate"
+        );
+        require(
+            holderTrustScore >= requiredTrustScore,
+            "Insufficient trust score for this certificate type"
+        );
 
-        require(_verifyZkProof(zkProofHash, holder, certificateType), "Invalid ZK proof");
+        require(
+            _verifyZkProof(zkProofHash, holder, certificateType),
+            "Invalid ZK proof"
+        );
 
         _certificateIdCounter++;
         uint256 certificateId = _certificateIdCounter;
@@ -100,27 +127,45 @@ contract CertificateManager is ERC721, AccessControl, ReentrancyGuard {
 
         _mint(holder, certificateId);
 
-        trustScore.updateScore(holder, 15, "Educational certificate issued");
+        trustScore.updateScore(holder, issueReward, "Certificate issued");
 
         verificationLogger.logEvent(
-            "CERTIFICATE_ISSUED", holder, keccak256(abi.encodePacked(certificateId, certificateType))
+            "CERTIFICATE_ISSUED",
+            holder,
+            keccak256(abi.encodePacked(certificateId, certificateType))
         );
 
-        emit CertificateIssued(certificateId, holder, msg.sender, certificateType);
+        emit CertificateIssued(
+            certificateId,
+            holder,
+            msg.sender,
+            certificateType
+        );
         return certificateId;
     }
 
-    function revokeCertificate(uint256 certificateId, string memory reason) external onlyRole(ISSUER_ROLE) {
+    function revokeCertificate(
+        uint256 certificateId,
+        string memory reason
+    ) external onlyRole(ISSUER_ROLE) {
         ownerOf(certificateId);
-        require(!certificates[certificateId].isRevoked, "Certificate already revoked");
         require(
-            certificates[certificateId].issuer == msg.sender || hasRole(ADMIN_ROLE, msg.sender),
+            !certificates[certificateId].isRevoked,
+            "Certificate already revoked"
+        );
+        require(
+            certificates[certificateId].issuer == msg.sender ||
+                hasRole(ADMIN_ROLE, msg.sender),
             "Not authorized to revoke"
         );
 
         certificates[certificateId].isRevoked = true;
 
-        trustScore.updateScore(certificates[certificateId].holder, -10, "Certificate revoked");
+        trustScore.updateScore(
+            certificates[certificateId].holder,
+            revokePenalty,
+            "Certificate revoked"
+        );
 
         verificationLogger.logEvent(
             "CERTIFICATE_REVOKED",
@@ -131,15 +176,24 @@ contract CertificateManager is ERC721, AccessControl, ReentrancyGuard {
         emit CertificateRevoked(certificateId, msg.sender, reason);
     }
 
-    function migrateCertificate(uint256 certificateId, address newHolder, bytes32 migrationProof)
-        external
-        onlyRole(ADMIN_ROLE)
-        nonReentrant
-    {
-        require(ownerOf(certificateId) != address(0), "Certificate does not exist");
+    function migrateCertificate(
+        uint256 certificateId,
+        address newHolder,
+        bytes32 migrationProof
+    ) external onlyRole(ADMIN_ROLE) nonReentrant {
+        require(
+            ownerOf(certificateId) != address(0),
+            "Certificate does not exist"
+        );
         require(newHolder != address(0), "Invalid new holder");
-        require(userRegistry.isRegistered(newHolder), "New holder not registered");
-        require(_verifyMigrationProof(certificateId, newHolder, migrationProof), "Invalid migration proof");
+        require(
+            userRegistry.isRegistered(newHolder),
+            "New holder not registered"
+        );
+        require(
+            _verifyMigrationProof(certificateId, newHolder, migrationProof),
+            "Invalid migration proof"
+        );
 
         address oldHolder = certificates[certificateId].holder;
         certificates[certificateId].holder = newHolder;
@@ -150,16 +204,25 @@ contract CertificateManager is ERC721, AccessControl, ReentrancyGuard {
         _transfer(oldHolder, newHolder, certificateId);
 
         verificationLogger.logEvent(
-            "CERTIFICATE_MIGRATED", newHolder, keccak256(abi.encodePacked(certificateId, oldHolder, newHolder))
+            "CERTIFICATE_MIGRATED",
+            newHolder,
+            keccak256(abi.encodePacked(certificateId, oldHolder, newHolder))
         );
 
         emit CertificateMigrated(certificateId, oldHolder, newHolder);
     }
 
-    function lockAccount(address account, string memory reason) external onlyRole(ADMIN_ROLE) {
+    function lockAccount(
+        address account,
+        string memory reason
+    ) external onlyRole(ADMIN_ROLE) {
         lockedAccounts[account] = true;
 
-        verificationLogger.logEvent("ACCOUNT_LOCKED", account, keccak256(bytes(reason)));
+        verificationLogger.logEvent(
+            "ACCOUNT_LOCKED",
+            account,
+            keccak256(bytes(reason))
+        );
 
         emit AccountLocked(account, reason);
     }
@@ -171,7 +234,9 @@ contract CertificateManager is ERC721, AccessControl, ReentrancyGuard {
         emit AccountUnlocked(account);
     }
 
-    function verifyCertificate(uint256 certificateId) external view returns (bool) {
+    function verifyCertificate(
+        uint256 certificateId
+    ) external view returns (bool) {
         try this.ownerOf(certificateId) {
             // Token exists
         } catch {
@@ -182,7 +247,9 @@ contract CertificateManager is ERC721, AccessControl, ReentrancyGuard {
         return !cert.isRevoked && block.timestamp <= cert.expiresAt;
     }
 
-    function getCertificatesByHolder(address holder) external view returns (uint256[] memory) {
+    function getCertificatesByHolder(
+        address holder
+    ) external view returns (uint256[] memory) {
         return holderCertificates[holder];
     }
 
@@ -190,7 +257,11 @@ contract CertificateManager is ERC721, AccessControl, ReentrancyGuard {
         return lockedAccounts[account];
     }
 
-    function _verifyZkProof(bytes32 proofHash, address holder, string memory certType) private pure returns (bool) {
+    function _verifyZkProof(
+        bytes32 proofHash,
+        address holder,
+        string memory certType
+    ) private pure returns (bool) {
         // Enhanced ZK proof verification with proper security checks
         require(proofHash != bytes32(0), "Invalid proof hash");
         require(holder != address(0), "Invalid holder address");
@@ -206,15 +277,18 @@ contract CertificateManager is ERC721, AccessControl, ReentrancyGuard {
         bytes32 typeCommitment = keccak256(abi.encodePacked(certType));
 
         // Ensure proof is properly formatted and within expected parameters
-        return proofHash != holderCommitment && proofHash != typeCommitment && proofHash != expectedDomain
-            && uint256(proofHash) > 0;
+        return
+            proofHash != holderCommitment &&
+            proofHash != typeCommitment &&
+            proofHash != expectedDomain &&
+            uint256(proofHash) > 0;
     }
 
-    function _verifyMigrationProof(uint256 certificateId, address newHolder, bytes32 /* migrationProof */ )
-        private
-        pure
-        returns (bool)
-    {
+    function _verifyMigrationProof(
+        uint256 certificateId,
+        address newHolder,
+        bytes32 /* migrationProof */
+    ) private pure returns (bool) {
         // Enhanced migration proof verification with proper security checks
         require(certificateId > 0, "Invalid certificate ID");
         require(newHolder != address(0), "Invalid new holder address");
@@ -225,7 +299,10 @@ contract CertificateManager is ERC721, AccessControl, ReentrancyGuard {
         return true; // Simplified for now - implement actual verification logic
     }
 
-    function _removeFromHolderList(address holder, uint256 certificateId) private {
+    function _removeFromHolderList(
+        address holder,
+        uint256 certificateId
+    ) private {
         uint256[] storage certs = holderCertificates[holder];
         uint256 length = certs.length;
 
@@ -244,14 +321,38 @@ contract CertificateManager is ERC721, AccessControl, ReentrancyGuard {
         revert("Certificate not found in holder list");
     }
 
-    function _update(address to, uint256 tokenId, address auth) internal override returns (address) {
+    function _update(
+        address to,
+        uint256 tokenId,
+        address auth
+    ) internal override returns (address) {
         address from = _ownerOf(tokenId);
         // Allow minting and admin-controlled migration, but prevent regular transfers
-        require(from == address(0) || hasRole(ADMIN_ROLE, auth), "Certificates are non-transferable");
+        require(
+            from == address(0) || hasRole(ADMIN_ROLE, auth),
+            "Certificates are non-transferable"
+        );
         return super._update(to, tokenId, auth);
     }
 
-    function supportsInterface(bytes4 interfaceId) public view override(ERC721, AccessControl) returns (bool) {
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view override(ERC721, AccessControl) returns (bool) {
         return super.supportsInterface(interfaceId);
+    }
+
+    // Admin configuration
+    function setTrustScoreRewards(
+        int256 _issueReward,
+        int256 _revokePenalty
+    ) external onlyRole(ADMIN_ROLE) {
+        require(_issueReward > 0 && _issueReward < 100, "Bad issue reward");
+        require(
+            _revokePenalty < 0 && _revokePenalty > -100,
+            "Bad revoke penalty"
+        );
+        issueReward = _issueReward;
+        revokePenalty = _revokePenalty;
+        emit TrustScoreRewardsUpdated(issueReward, revokePenalty);
     }
 }

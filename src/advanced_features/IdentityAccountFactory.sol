@@ -2,16 +2,16 @@
 pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import "./EduCertAccountDeployer.sol";
+import "./dependencies/IdentityAccountDeployer.sol";
 import "../interfaces/IVerificationLogger.sol";
 import "../interfaces/ITrustScore.sol";
 
 /**
- * @title EduCertAccountFactory
- * @notice Factory for creating EduCert modular accounts with Alchemy Account Kit integration
+ * @title IdentityAccountFactory
+ * @notice Factory for creating Identity modular accounts with Alchemy Account Kit integration
  * @dev Supports gasless account creation, session key setup, and Alchemy paymaster integration
  */
-contract EduCertAccountFactory is AccessControl {
+contract IdentityAccountFactory is AccessControl {
     // Compact errors to reduce bytecode
     error InvalidAddress();
     error InvalidOwner();
@@ -35,7 +35,7 @@ contract EduCertAccountFactory is AccessControl {
     Config public config;
     bytes32 public constant CREATOR_ROLE = keccak256("CREATOR_ROLE");
     address public bundler; // Alchemy bundler or any trusted relayer
-    IEduCertAccountDeployer public deployer;
+    IIdentityAccountDeployer public deployer;
 
     // State tracking
     mapping(address => address[]) public userAccounts; // owner => account addresses
@@ -81,11 +81,11 @@ contract EduCertAccountFactory is AccessControl {
             maxAccountsPerUser: _maxAccountsPerUser,
             restricted: true
         });
-        deployer = new EduCertAccountDeployer();
+        deployer = new IdentityAccountDeployer();
     }
 
     /**
-     * @dev Create a new EduCert modular account
+     * @dev Create a new Identity modular account
      * @param owner The owner of the account
      * @param salt Salt for deterministic address generation
      * @return account The created account address

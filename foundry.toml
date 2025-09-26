@@ -11,6 +11,15 @@ remappings = [
     '@foundry-devops=lib/foundry-devops/',
     '@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/',
 ]
+# File system access for scripts (forge-std's VM.readFile/writeJson, etc.)
+fs_permissions = [
+    { access = "read", path = "./broadcast" },
+    { access = "write", path = "./broadcast" },
+    { access = "read", path = "broadcast" },
+    { access = "write", path = "broadcast" },
+    { access = "read", path = "./reports" },
+    { access = "read", path = "./img/" },
+]
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
 [lint]
 exclude_lints = [
@@ -21,8 +30,17 @@ exclude_lints = [
     "pascal-case-struct",
 ]
 
-fs_permissions = [
-    { access = "read", path = "./broadcast" },
-    { access = "read", path = "./reports" },
-    { access = "read", path = "./img/" },
+[profile.coverage]
+src = "src"
+test = "test"
+libs = ["lib"]
+# Use minimal IR only when necessary from CLI (--ir-minimum) to avoid mapping skew.
+fs_permissions = [{ access = "read", path = "./broadcast" }]
+exclude = [
+    "script/**",
+    "tools/zk-circuits/build/**",
+    "src/**/dependencies/**",
+    "src/privacy_cross-chain/dependencies/**",
+    "src/verification/dependencies/**",
+    "src/organizations/dependencies/**",
 ]

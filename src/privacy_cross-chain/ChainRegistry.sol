@@ -2,7 +2,7 @@
 pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import "./interfaces/IChainRegistry.sol";
+import "../interfaces/IChainRegistry.sol";
 
 contract ChainRegistry is AccessControl, IChainRegistry {
     error InvalidAddress();

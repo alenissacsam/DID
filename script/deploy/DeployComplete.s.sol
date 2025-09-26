@@ -6,7 +6,6 @@ import {DeployLib} from "./DeployLib.sol";
 import {VerificationLogger} from "../../src/core/VerificationLogger.sol";
 import {TrustScore} from "../../src/advanced_features/TrustScore.sol";
 import {CertificateManager} from "../../src/organizations/CertificateManager.sol";
-import {RecognitionManager} from "../../src/organizations/RecognitionManager.sol";
 import {ZkKeyRegistry} from "../../src/privacy_cross-chain/ZkKeyRegistry.sol";
 
 /// One-shot script: deploy everything and wire roles.
@@ -42,14 +41,12 @@ contract DeployComplete is Script {
         DeployLib.deployOfflineMobile(admin);
 
         // 4) Deploy Organizations
-        (CertificateManager cert, RecognitionManager recog) = DeployLib
-            .deployOrganizations(
-                address(core.logger),
-                address(core.registry),
-                address(core.trust)
-            );
+        CertificateManager cert = DeployLib.deployOrganizations(
+            address(core.logger),
+            address(core.registry),
+            address(core.trust)
+        );
         console.log("CertificateManager:", address(cert));
-        console.log("RecognitionManager:", address(recog));
 
         // 5) Deploy Guardian + Anchor
         (, , ZkKeyRegistry zkReg) = DeployLib.deployGuardianAnchor(
@@ -84,8 +81,7 @@ contract DeployComplete is Script {
 
         // Give deployer default org roles for demos
         cert.grantRole(keccak256("ISSUER_ROLE"), admin);
-        recog.grantRole(keccak256("BADGE_ADMIN_ROLE"), admin);
-        recog.grantRole(keccak256("MINTER_ROLE"), admin);
+        // Recognition system removed; badge roles obsolete.
 
         vm.stopBroadcast();
 

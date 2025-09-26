@@ -2,6 +2,7 @@
 pragma solidity ^0.8.19;
 
 import {Script, console} from "forge-std/Script.sol";
+import {DevOpsTools} from "@foundry-devops/src/DevOpsTools.sol";
 import {UserIdentityRegistry} from "../../src/core/UserIdentityRegistry.sol";
 
 /// Usage:
@@ -15,11 +16,17 @@ import {UserIdentityRegistry} from "../../src/core/UserIdentityRegistry.sol";
 ///  - IDENTITY_METADATA_URI: e.g. ipfs://<CID>
 contract SetIdentityMetadata is Script {
     function run() external {
-        address registryAddr = vm.envAddress("REGISTRY_ADDRESS");
+        // Optional env override, otherwise resolve latest deployment via DevOpsTools
+        address registryAddr = vm.envOr("REGISTRY_ADDRESS", address(0));
+        if (registryAddr == address(0)) {
+            registryAddr = DevOpsTools.get_most_recent_deployment(
+                "UserIdentityRegistry",
+                block.chainid
+            );
+        }
         address user = vm.envOr("USER_ADDRESS", address(0));
         string memory uri = vm.envString("IDENTITY_METADATA_URI");
-
-        require(registryAddr != address(0), "REGISTRY_ADDRESS not set");
+        require(registryAddr != address(0), "UserIdentityRegistry not found");
         require(bytes(uri).length > 0, "IDENTITY_METADATA_URI not set");
 
         uint256 pk = vm.envUint("PRIVATE_KEY");

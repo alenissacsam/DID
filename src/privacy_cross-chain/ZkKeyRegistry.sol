@@ -2,7 +2,7 @@
 pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import {IZkKeyRegistry} from "./interfaces/IZkKeyRegistry.sol";
+import {IZkKeyRegistry} from "../interfaces/IZkKeyRegistry.sol";
 
 contract ZkKeyRegistry is AccessControl, IZkKeyRegistry {
     bytes32 public constant KEY_ADMIN_ROLE = keccak256("KEY_ADMIN_ROLE");

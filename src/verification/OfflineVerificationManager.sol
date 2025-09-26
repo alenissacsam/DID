@@ -22,7 +22,7 @@ contract OfflineVerificationManager is AccessControl, EIP712 {
     bytes32 public constant VERIFIER_ROLE = keccak256("VERIFIER_ROLE");
 
     // EIP-712 Domain
-    string private constant SIGNING_DOMAIN = "EduCert";
+    string private constant SIGNING_DOMAIN = "Identity";
     string private constant SIGNATURE_VERSION = "1";
 
     // EIP-712 TypeHash for offline credentials

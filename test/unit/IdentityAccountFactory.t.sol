@@ -2,12 +2,12 @@
 pragma solidity ^0.8.19;
 
 import "forge-std/Test.sol";
-import {EduCertAccountFactory} from "src/advanced_features/EduCertAccountFactory.sol";
+import {IdentityAccountFactory} from "src/advanced_features/IdentityAccountFactory.sol";
 import {VerificationLogger} from "src/core/VerificationLogger.sol";
 import {TrustScore} from "src/advanced_features/TrustScore.sol";
 
-contract EduCertAccountFactoryTest is Test {
-    EduCertAccountFactory factory;
+contract IdentityAccountFactoryTest is Test {
+    IdentityAccountFactory factory;
     VerificationLogger logger;
     TrustScore trust;
 
@@ -19,7 +19,7 @@ contract EduCertAccountFactoryTest is Test {
         trust = new TrustScore(address(logger));
         // allow contracts to log
         logger.grantRole(logger.LOGGER_ROLE(), address(trust));
-        factory = new EduCertAccountFactory(
+        factory = new IdentityAccountFactory(
             entryPoint,
             address(logger),
             address(trust),

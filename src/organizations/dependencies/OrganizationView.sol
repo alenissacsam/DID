@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "./OrganizationStorage.sol";
+import "../OrganizationStorage.sol";
 
 contract OrganizationView is OrganizationStorage {
     function getActiveOrganizations() external view returns (address[] memory) {

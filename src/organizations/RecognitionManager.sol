@@ -103,7 +103,7 @@ contract RecognitionManager is ERC1155, AccessControl, ReentrancyGuard {
         address _trustScore,
         address _verificationLogger,
         address _certificateManager
-    ) ERC1155("https://api.educert.org/badge/{id}.json") {
+    ) ERC1155("https://api.identity.org/badge/{id}.json") {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(BADGE_ADMIN_ROLE, msg.sender);
         _grantRole(MINTER_ROLE, msg.sender);
